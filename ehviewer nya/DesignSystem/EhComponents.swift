@@ -145,7 +145,7 @@ struct EhRatingRow: View {
 
 // MARK: - 顶部横向切页
 
-/// 首页/订阅/热门/排行 的横向切页，选中项带 2px 琥珀下划线。
+/// 首页/订阅/热门/排行 的横向切页，选中项是琥珀玻璃胶囊。
 ///
 /// 取代原先「更多」标签页里的二级跳转：这四者是同一类内容的不同数据源，
 /// 放在同一层级横向切换比藏进二级菜单更符合它们的关系。
@@ -153,32 +153,25 @@ struct EhTopTabs<T: Hashable>: View {
     let items: [(value: T, title: String)]
     @Binding var selection: T
 
-    @Namespace private var underline
-
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 20) {
+            HStack(spacing: 8) {
                 ForEach(items, id: \.value) { item in
                     Button {
                         withAnimation(.easeInOut(duration: 0.22)) { selection = item.value }
                     } label: {
-                        VStack(spacing: 6) {
-                            Text(item.title)
-                                .font(.system(size: 15, weight: selection == item.value ? .semibold : .regular))
-                                .foregroundStyle(selection == item.value ? EhColor.label : EhColor.secondaryLabel)
-
-                            Group {
-                                if selection == item.value {
-                                    Capsule()
-                                        .fill(EhColor.accentFill)
-                                        .matchedGeometryEffect(id: "underline", in: underline)
-                                } else {
-                                    Color.clear
-                                }
-                            }
-                            .frame(height: 2)
-                        }
-                        .contentShape(Rectangle())
+                        Text(item.title)
+                            .font(.system(size: 15, weight: selection == item.value ? .semibold : .regular))
+                            .foregroundStyle(selection == item.value ? EhColor.onAccentFill : EhColor.secondaryLabel)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 6)
+                            .glassEffect(
+                                selection == item.value
+                                    ? .regular.tint(EhColor.accentFill).interactive()
+                                    : .regular.interactive(),
+                                in: .capsule
+                            )
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                 }
@@ -209,9 +202,12 @@ struct EhFilterPills<T: Hashable>: View {
                             .foregroundStyle(isSelected ? EhColor.onAccentFill : EhColor.secondaryLabel)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 7)
-                            .background {
-                                Capsule().fill(isSelected ? EhColor.accentFill : EhColor.fill)
-                            }
+                            .glassEffect(
+                                isSelected
+                                    ? .regular.tint(EhColor.accentFill).interactive()
+                                    : .regular.interactive(),
+                                in: .capsule
+                            )
                     }
                     .buttonStyle(.plain)
                 }

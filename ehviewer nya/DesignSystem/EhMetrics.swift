@@ -151,6 +151,17 @@ extension View {
         }
     }
 
+    /// 原生液态玻璃。主页面浮起控件（搜索栏、过滤胶囊、浮起导航条）用它，
+    /// 替代自绘的 ehGlass；阅读器等场合仍用 ehGlass。
+    func ehLiquidGlass<S: Shape>(
+        in shape: S, tint: Color? = nil, interactive: Bool = false
+    ) -> some View {
+        var glass = Glass.regular
+        if let tint { glass = glass.tint(tint) }
+        if interactive { glass = glass.interactive() }
+        return self.glassEffect(glass, in: shape)
+    }
+
     /// 阅读器专用玻璃：永远是深色。
     ///
     /// 阅读器的底色恒为纯黑（省 OLED 电，也不跟画面抢注意力），

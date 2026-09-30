@@ -62,36 +62,41 @@ struct EhFloatingTabBar<Tab: Hashable>: View {
     var onReselect: ((Tab) -> Void)? = nil
 
     var body: some View {
-        HStack(spacing: 0) {
-            ForEach(items, id: \.value) { item in
-                let isSelected = selection == item.value
-                Button {
-                    if isSelected {
-                        onReselect?(item.value)
-                    } else {
-                        selection = item.value
-                        Haptics.tap()
+        GlassEffectContainer {
+            HStack(spacing: 0) {
+                ForEach(items, id: \.value) { item in
+                    let isSelected = selection == item.value
+                    Button {
+                        if isSelected {
+                            onReselect?(item.value)
+                        } else {
+                            selection = item.value
+                            Haptics.tap()
+                        }
+                    } label: {
+                        VStack(spacing: 3) {
+                            Image(systemName: isSelected ? item.selectedSymbol : item.symbol)
+                                .font(.system(size: 19, weight: .regular))
+                                .symbolRenderingMode(.hierarchical)
+                            Text(item.title)
+                                .font(EhFont.tiny)
+                        }
+                        .foregroundStyle(isSelected ? EhColor.accent : EhColor.secondaryLabel)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: EhSize.tabBarHeight)
+                        .contentShape(Rectangle())
                     }
-                } label: {
-                    VStack(spacing: 3) {
-                        Image(systemName: isSelected ? item.selectedSymbol : item.symbol)
-                            .font(.system(size: 19, weight: .regular))
-                            .symbolRenderingMode(.hierarchical)
-                        Text(item.title)
-                            .font(EhFont.tiny)
-                    }
-                    .foregroundStyle(isSelected ? EhColor.accent : EhColor.secondaryLabel)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: EhSize.tabBarHeight)
-                    .contentShape(Rectangle())
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(item.title)
+                    .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel(item.title)
-                .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
             }
+            .frame(height: EhSize.tabBarHeight)
+            .glassEffect(
+                .regular.interactive(),
+                in: RoundedRectangle(cornerRadius: EhSize.tabBarRadius, style: .continuous)
+            )
         }
-        .frame(height: EhSize.tabBarHeight)
-        .ehGlass(cornerRadius: EhSize.tabBarRadius)
         .padding(.horizontal, EhSize.tabBarSideInset)
         .padding(.bottom, EhSize.tabBarBottomInset)
     }

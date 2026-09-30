@@ -9,6 +9,7 @@
 //
 
 import Testing
+import EhModels
 @testable import ehviewer_nya
 
 @MainActor
@@ -38,5 +39,28 @@ struct GalleryFilterTests {
     @Test func bareToBare() {
         #expect(GalleryFilterEngine.tagMatches("translated", "translated"))
         #expect(!GalleryFilterEngine.tagMatches("translated", "translate"))
+    }
+}
+
+/// `galleries` 的原地修改此前会崩：`append` / 下标赋值走 `_modify` 访问器，
+/// didSet 在独占访问结束前触发，里面再 `&galleries` 写回就是嵌套写，命中
+/// Swift 独占访问检查（EXC_BREAKPOINT，栈顶 `_galleries.didset`）。
+/// 这条守住翻页 append 与收藏标记下标赋值这两条路径。
+@MainActor
+struct GalleryListViewModelMutationTests {
+    @Test func appendAndSubscriptDoNotCrash() {
+        let vm = GalleryListViewModel()
+        let a = GalleryInfo(gid: 1, token: "aaa")
+        let b = GalleryInfo(gid: 2, token: "bbb")
+        let c = GalleryInfo(gid: 3, token: "ccc")
+
+        vm.galleries = [a, b]
+        #expect(vm.galleries.map(\.gid) == [1, 2])
+
+        vm.galleries.append(c)
+        #expect(vm.galleries.map(\.gid) == [1, 2, 3])
+
+        vm.galleries[0].favoriteSlot = 3
+        #expect(vm.galleries[0].favoriteSlot == 3)
     }
 }

@@ -286,40 +286,49 @@ struct GalleryListView: View {
         }
     }
 
+    /// 浮在列表上方的浏览页头：搜索栏 + 顶部切页 + 排行周期。
+    /// 挂成列表的 top safeAreaInset，列表内容从其下方滚过。
+    @ViewBuilder
+    private var browseHeader: some View {
+        VStack(spacing: 0) {
+            if !hidesOwnSearchBar {
+                searchBarView
+            }
+            // 顶部横向切页 — 首页/订阅/热门/排行。
+            // 这四者是同一类内容的不同数据源，放在同一层级横向切换；
+            // 此前热门与排行要经「更多」标签页二级跳转才能到达。
+            if let browseSource {
+                EhTopTabs(
+                    items: BrowseSource.allCases.map { ($0, $0.title) },
+                    selection: browseSource
+                )
+            }
+            // 排行榜的时间范围。挂在切页条下面而不是另起一屏，
+            // 是因为它和「首页/订阅/热门」是同一层级的数据源筛选。
+            if let toplistPeriod {
+                EhFilterPills(
+                    items: Self.toplistPeriods.map { ($0.tl, $0.title) },
+                    selection: toplistPeriod
+                )
+                .padding(.bottom, 6)
+            }
+        }
+    }
+
     // iPhone 布局
     private var compactContent: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                // 搜索栏 (全宽，置于内容顶部)
-                if !hidesOwnSearchBar {
-                    searchBarView
-                }
-
+            Group {
                 // 聚焦搜索时由面板接管搜索框以下的区域——此时列表内容与用户无关。
                 // 搜索框本身留在上面，否则用户看不到自己正在打什么。
                 if isSearchFocused {
-                    searchSuggestionsOverlay
+                    VStack(spacing: 0) {
+                        if !hidesOwnSearchBar {
+                            searchBarView
+                        }
+                        searchSuggestionsOverlay
+                    }
                 } else {
-                    // 顶部横向切页 — 首页/订阅/热门/排行。
-                    // 这四者是同一类内容的不同数据源，放在同一层级横向切换；
-                    // 此前热门与排行要经「更多」标签页二级跳转才能到达。
-                    if let browseSource {
-                        EhTopTabs(
-                            items: BrowseSource.allCases.map { ($0, $0.title) },
-                            selection: browseSource
-                        )
-                    }
-
-                    // 排行榜的时间范围。挂在切页条下面而不是另起一屏，
-                    // 是因为它和「首页/订阅/热门」是同一层级的数据源筛选。
-                    if let toplistPeriod {
-                        EhFilterPills(
-                            items: Self.toplistPeriods.map { ($0.tl, $0.title) },
-                            selection: toplistPeriod
-                        )
-                        .padding(.bottom, 6)
-                    }
-
                     Group {
                         if viewModel.galleries.isEmpty && viewModel.errorMessage != nil && !viewModel.isLoading {
                             errorView
@@ -331,6 +340,10 @@ struct GalleryListView: View {
                             // 离线可用: 始终显示列表结构，加载指示器为内联行，不阻塞界面
                             galleryList
                         }
+                    }
+                    // 页头浮在列表之上，列表内容从其下方滚过，玻璃才有内容可折射。
+                    .safeAreaInset(edge: .top, spacing: 0) {
+                        browseHeader
                     }
                 }
             }
@@ -452,16 +465,17 @@ struct GalleryListView: View {
 
     /// 被推入导航栈时的内容 — 不包装 NavigationStack，避免嵌套
     private var pushedContent: some View {
-        VStack(spacing: 0) {
-            // 搜索栏 (全宽，置于内容顶部)
-            searchBarView
-
-            Group {
-                if viewModel.galleries.isEmpty && viewModel.errorMessage != nil && !viewModel.isLoading {
+        Group {
+            if viewModel.galleries.isEmpty && viewModel.errorMessage != nil && !viewModel.isLoading {
+                VStack(spacing: 0) {
+                    searchBarView
                     errorView
-                } else {
-                    galleryList
                 }
+            } else {
+                galleryList
+                    .safeAreaInset(edge: .top, spacing: 0) {
+                        searchBarView
+                    }
             }
         }
         .navigationTitle(navigationTitle)
@@ -648,6 +662,9 @@ struct GalleryListView: View {
             }
         }
         .listStyle(.plain)
+        #if os(macOS)
+        .scrollEdgeEffectHidden(true, for: .top)
+        #endif
         #if os(iOS)
         // 向下滚收起底部导航条，向上滚放出来
         .ehTabBarAutoHide()
@@ -676,15 +693,21 @@ struct GalleryListView: View {
         // Perf P0-3: 一次性读取配置
         let showJpn = AppSettings.shared.showJpnTitle
         let fixThumb = AppSettings.shared.fixThumbUrl
-        return VStack(spacing: 0) {
-            // 搜索栏 (全宽，置于内容顶部)
-            searchBarView
-
-            Group {
-                if viewModel.galleries.isEmpty && viewModel.errorMessage != nil && !viewModel.isLoading {
+        return Group {
+            if viewModel.galleries.isEmpty && viewModel.errorMessage != nil && !viewModel.isLoading {
+                VStack(spacing: 0) {
+                    searchBarView
                     errorView
-                } else {
-                    List(selection: selectionBinding) {
+                }
+            } else {
+                List(selection: selectionBinding) {
+                        // 顶部空白占位：给浮起的搜索胶囊让位，避免初始遮住第一条
+                        Color.clear
+                            .frame(height: 54)
+                            .listRowInsets(EdgeInsets())
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
+
                         // 内联加载指示器 (不阻塞界面)
                         if viewModel.isLoading && viewModel.galleries.isEmpty {
                             VStack(spacing: 8) {
@@ -719,10 +742,16 @@ struct GalleryListView: View {
                         }
                     }
                     .listStyle(.sidebar)
+                    .scrollEdgeEffectHidden(true, for: .top)
+//                    .safeAreaInset(edge: .top, spacing: 0) {
+//                        Color.clear.frame(height: 54)
+//                    }
+                    .overlay(alignment: .top) {
+                        searchBarView
+                    }
                     .refreshable {
                         await viewModel.refreshAsync(mode: effectiveMode)
                     }
-                }
             }
         }
         .toolbar { galleryToolbar }
@@ -1445,21 +1474,29 @@ struct GalleryRow: View {
 class GalleryListViewModel {
     /// 列表内容。**写进来的东西会先过一遍过滤器。**
     ///
-    /// 过滤在 didSet 里做，而不是在那 8 处赋值点上分别调一次：
-    /// 分散写就意味着以后新增一条取数路径必然会漏掉，而「漏掉」的表现
-    /// 是屏蔽悄悄失效——用户根本看不出来是哪一页没生效。
-    var galleries: [GalleryInfo] = [] {
-        didSet {
-            // 里面还会再写一次 galleries，靠这个标记挡住重入
-            guard !isApplyingFilters else { return }
-            isApplyingFilters = true
-            defer { isApplyingFilters = false }
-            let hidden = GalleryFilterEngine.shared.apply(to: &galleries)
+    /// 过滤放在 setter 里，而不是 didSet：`append` / 下标赋值走 `_modify`
+    /// 访问器，didSet 会在那次独占访问结束前触发，此时再 `&galleries` 写回就是
+    /// 嵌套写，命中 Swift 独占访问检查并崩溃（EXC_BREAKPOINT）。get/set 让原地
+    /// 修改退化成「取值 → 改副本 → 写回」，过滤只在写回时做一次。
+    ///
+    /// 集中在这里而不是分写在各个赋值点，是为了避免新增取数路径漏掉过滤——
+    /// 「漏掉」的表现是屏蔽悄悄失效，用户看不出来。
+    @ObservationIgnored private var galleriesStorage: [GalleryInfo] = []
+    var galleries: [GalleryInfo] {
+        get {
+            access(keyPath: \.galleries)
+            return galleriesStorage
+        }
+        set {
+            var value = newValue
+            let hidden = GalleryFilterEngine.shared.apply(to: &value)
+            withMutation(keyPath: \.galleries) {
+                galleriesStorage = value
+            }
             filteredOutCount = hidden
         }
     }
 
-    @ObservationIgnored private var isApplyingFilters = false
     /// 最近一次加载被过滤器挡掉的条数，用来在列表底部说明「少了几本」
     var filteredOutCount = 0
     var isLoading = false

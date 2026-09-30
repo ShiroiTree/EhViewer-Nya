@@ -99,9 +99,7 @@ struct EhSearchBar: View {
             }
             .padding(.horizontal, 12)
             .frame(height: 38)
-            .background {
-                Capsule().fill(EhColor.fill)
-            }
+            .ehLiquidGlass(in: .capsule)
             .overlay {
                 // 聚焦时描一圈琥珀，明确「正在输入」——
                 // 深色底上仅靠光标闪烁不够显眼

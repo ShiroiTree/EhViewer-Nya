@@ -19,6 +19,9 @@
 import SwiftUI
 import EhModels
 import EhSettings
+#if os(macOS)
+import AppKit
+#endif
 
 /// 非泛型：配件用 AnyView 承载。
 ///
@@ -133,6 +136,30 @@ struct EhGalleryRow: View {
         }
     }
 
+    /// 标签条：macOS 用 AppKit 版横向滚动（见 HorizontalTagScroll）把竖向滑动透传给
+    /// 外层列表；其它平台仍是 SwiftUI 的横向 ScrollView。
+    @ViewBuilder
+    private var tagStrip: some View {
+        #if os(macOS)
+        HorizontalTagScroll(content: tagStripContent)
+        #else
+        ScrollView(.horizontal, showsIndicators: false) {
+            tagStripContent
+        }
+        .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+        #endif
+    }
+
+    private var tagStripContent: some View {
+        HStack(spacing: 4) {
+            ForEach(orderedTags, id: \.self) { tag in
+                tagChip(tag)
+            }
+        }
+        // 让最后一枚 chip 也能滑到视野中央，不贴着边
+        .padding(.trailing, 8)
+    }
+
     /// 命中搜索的标签排前面，其余保持原顺序
     private var orderedTags: [String] {
         guard !highlightedTags.isEmpty else { return tags }
@@ -194,18 +221,8 @@ struct EhGalleryRow: View {
                     // 此前是 `tags.prefix(4)` 直接截断：多出来的标签既看不到、
                     // 也没有任何办法看到。列表行确实不该被标签占满，但「放不下」
                     // 和「不给看」是两回事。
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 4) {
-                            ForEach(orderedTags, id: \.self) { tag in
-                                tagChip(tag)
-                            }
-                        }
-                        // 让最后一枚 chip 也能滑到视野中央，不贴着边
-                        .padding(.trailing, 8)
-                    }
-                    // 横向滚动区不能吃掉列表的纵向滑动
-                    .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
-                    .padding(.bottom, 4)
+                    tagStrip
+                        .padding(.bottom, 4)
                 }
 
                 // 状态标记这一行此前被写在 `if !meta.isEmpty` 里面：
@@ -352,3 +369,55 @@ struct EhRowActionButton: View {
         .buttonStyle(.plain)
     }
 }
+
+#if os(macOS)
+/// 横向标签条：macOS 的 SwiftUI 横向 `ScrollView`（底层是 NSScrollView）会把竖向
+/// scrollWheel 一并吞掉，在标签条上滚时外层列表不跟着动。换用自定义 NSScrollView 承载，
+/// 竖向占主导的事件手动转交给外层（列表）的滚动视图，横向才由自己处理。
+private final class HorizontalPassthroughScrollView: NSScrollView {
+    override func scrollWheel(with event: NSEvent) {
+        if abs(event.scrollingDeltaY) >= abs(event.scrollingDeltaX) {
+            if let outer = enclosingScrollView {
+                outer.scrollWheel(with: event)
+            } else {
+                nextResponder?.scrollWheel(with: event)
+            }
+        } else {
+            super.scrollWheel(with: event)
+        }
+    }
+
+    override var intrinsicContentSize: NSSize {
+        NSSize(width: NSView.noIntrinsicMetric, height: documentView?.fittingSize.height ?? 0)
+    }
+}
+
+private struct HorizontalTagScroll<Content: View>: NSViewRepresentable {
+    let content: Content
+
+    func makeNSView(context: Context) -> HorizontalPassthroughScrollView {
+        let scroll = HorizontalPassthroughScrollView()
+        scroll.drawsBackground = false
+        scroll.hasHorizontalScroller = false
+        scroll.hasVerticalScroller = false
+        scroll.verticalScrollElasticity = .none
+        scroll.horizontalScrollElasticity = .automatic
+
+        let host = NSHostingView(rootView: content)
+        host.translatesAutoresizingMaskIntoConstraints = false
+        scroll.documentView = host
+
+        let clip = scroll.contentView
+        NSLayoutConstraint.activate([
+            host.leadingAnchor.constraint(equalTo: clip.leadingAnchor),
+            host.topAnchor.constraint(equalTo: clip.topAnchor),
+        ])
+        return scroll
+    }
+
+    func updateNSView(_ nsView: HorizontalPassthroughScrollView, context: Context) {
+        (nsView.documentView as? NSHostingView<Content>)?.rootView = content
+        nsView.invalidateIntrinsicContentSize()
+    }
+}
+#endif

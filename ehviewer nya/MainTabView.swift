@@ -21,6 +21,23 @@ struct MainTabView: View {
     @State private var selectedGallery: GalleryInfo?
     /// 标签导航路径 — 支持从 Detail 列点击标签推入新画廊列表到 Content 列
     @State private var contentPath = NavigationPath()
+
+    private static let detailTransitionAnimation = Animation.easeInOut(duration: 0.26)
+
+    /// 画廊选中统一走这里：macOS 的 `List(selection:)` 由 AppKit 提交，落在 SwiftUI
+    /// 事务之外，直接改 `selectedGallery` 不会触发过渡；在 setter 里包一层 withAnimation。
+    private var selection: Binding<GalleryInfo?> {
+        Binding(
+            get: { selectedGallery },
+            set: { newValue in
+                withAnimation(Self.detailTransitionAnimation) { selectedGallery = newValue }
+            }
+        )
+    }
+
+    private func closeDetail() {
+        withAnimation(Self.detailTransitionAnimation) { selectedGallery = nil }
+    }
     #endif
 
     enum Tab: String, CaseIterable {
@@ -126,25 +143,10 @@ struct MainTabView: View {
             .navigationTitle("EhViewer")
             .navigationSplitViewColumnWidth(min: 160, ideal: 180)
         } detail: {
-            // 列表与画廊详情并排放在 detail 这一栏里，而不是让 NavigationSplitView
-            // 常驻第三个栏目。
-            //
-            // 三栏布局在没有任何选中时也会把第三栏画出来（内容是「选择画廊」占位），
-            // 切到设置、下载这些与画廊无关的页面时那一栏同样还在。改成 HSplitView 后，
-            // 详情栏只在真正选中一本画廊时才被加进来，其余时候列表独占整栏；
-            // 设置页的二级 push 仍在左栏的导航栈里，不受影响。
-            HSplitView {
-                galleryListColumn
-                if let gallery = selectedGallery {
-                    galleryDetailColumn(gallery)
-                }
-            }
-            // HSplitView 按子视图的 ideal 尺寸摆放，不会自动拉满整栏：
-            // 设置页那类自带固定高度的内容会因此只覆盖上半截，下面露出窗口背景。
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            macDetail
         }
         .onChange(of: selectedTab) { _, newTab in
-            selectedGallery = nil
+            closeDetail()
             contentPath = NavigationPath()
         }
         .onReceive(NotificationCenter.default.publisher(for: .navigateToHome)) { _ in
@@ -167,7 +169,7 @@ struct MainTabView: View {
                   let gid = userInfo["gid"] as? Int64,
                   let token = userInfo["token"] as? String else { return }
             let gallery = GalleryInfo(gid: gid, token: token)
-            selectedGallery = gallery
+            selection.wrappedValue = gallery
         }
         #else
         // iOS: iPad regular → 侧边栏 NavigationSplitView, iPhone → 底部 TabView
@@ -272,24 +274,25 @@ struct MainTabView: View {
                 }
                 .navigationDestination(for: TagSearchDestination.self) { dest in
                     // 标签点击推入的画廊列表 (对齐 Android: onTagClick → GalleryListScene)
-                    GalleryListView(mode: .tag(keyword: dest.tag), selection: $selectedGallery)
+                    GalleryListView(mode: .tag(keyword: dest.tag), selection: selection)
                 }
                 .navigationDestination(for: GalleryQueryDestination.self) { dest in
                     // 上传者等查询推入的画廊列表
-                    GalleryListView(mode: .search(dest.query), selection: $selectedGallery)
+                    GalleryListView(mode: .search(dest.query), selection: selection)
                 }
         }
         .id(selectedTab)
-        .frame(minWidth: 340, idealWidth: 480, maxWidth: .infinity)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    /// 详情栏：只在有选中画廊时由 `HSplitView` 加入，所以不存在空占位状态。
+    /// 详情栏：只在有选中画廊时由主体 `HStack` 加入，所以不存在空占位状态。
     private func galleryDetailColumn(_ gallery: GalleryInfo) -> some View {
         NavigationStack {
             GalleryDetailView(gallery: gallery)
                 .id(gallery.gid)
+                .background(.background)
         }
-        .frame(minWidth: 380, idealWidth: 520, maxWidth: .infinity)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .environment(\.tagNavigationAction, TagNavigationAction { tag in
             contentPath.append(TagSearchDestination(tag: tag))
         })
@@ -298,19 +301,107 @@ struct MainTabView: View {
         })
     }
 
+    /// macOS 主体栏：够宽时列表与详情并排；窄时回退单栏（列表或详情二选一）。
+    ///
+    /// 不用 NavigationSplitView 常驻第三栏：三栏布局在没选中时也会把第三栏画出来
+    /// （「选择画廊」占位），切到设置、下载这些与画廊无关的页时那一栏同样还在。
+    ///
+    /// 宽度在 detail 列内部量：`proxy.size` 就是该列被分配到的宽度（窗口 − 侧栏），
+    /// 与子视图内容无关，不会形成「内容撑大 → 量到更大」的反馈。测得后显式算出的宽度
+    /// 总和恰等于可用宽度，详情不会溢出，侧栏也不会被挤扁。
+    @ViewBuilder
+    private var macDetail: some View {
+        GeometryReader { geo in
+            let width = geo.size.width
+            if width < MacDetailLayout.twoColumnMin {
+                compactColumn
+            } else {
+                let listWidth = min(
+                    max(MacDetailLayout.listMin, width * 0.42),
+                    MacDetailLayout.listMax
+                )
+                let detailWidth = max(MacDetailLayout.detailMin, width - listWidth)
+                HStack(spacing: 0) {
+                    // 没选中时列表铺满；选中后收窄，让详情滑入并排。
+                    galleryListColumn
+                        .frame(width: selectedGallery == nil ? width : listWidth)
+                    if let gallery = selectedGallery {
+                        galleryDetailColumn(gallery)
+                            .frame(width: detailWidth)
+                            .transition(.move(edge: .trailing).combined(with: .opacity))
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                .clipped()
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .toolbar {
+            if selectedGallery != nil {
+                ToolbarItem(placement: .navigation) {
+                    Button {
+                        closeDetail()
+                    } label: {
+                        Image(systemName: "chevron.backward")
+                    }
+                    .help("关闭详情")
+                }
+            }
+        }
+    }
+
+    /// 窄窗单栏：列表与详情二选一，手搓滑动过渡。
+    ///
+    /// macOS 的 NavigationStack push 不产生动画（`withAnimation` 也压不出过渡），所以
+    /// 详情不再 push 进栈，而是叠在列表之上由 `.transition` 滑入；列表栈只保留标签/查询
+    /// 的推入导航。关闭动作由标题栏那个液态玻璃按钮提供（见 macDetail 的 toolbar）。
+    private var compactColumn: some View {
+        ZStack {
+            NavigationStack(path: $contentPath) {
+                macOSContentView(for: selectedTab)
+                    .navigationDestination(for: TagSearchDestination.self) { dest in
+                        GalleryListView(mode: .tag(keyword: dest.tag), selection: selection)
+                    }
+                    .navigationDestination(for: GalleryQueryDestination.self) { dest in
+                        GalleryListView(mode: .search(dest.query), selection: selection)
+                    }
+            }
+            if let gallery = selectedGallery {
+                NavigationStack {
+                    GalleryDetailView(gallery: gallery)
+                        .id(gallery.gid)
+                        .background(.background)
+                }
+                // 在详情里点标签/上传者时，先撤回详情再推列表，否则会被详情盖住。
+                .environment(\.tagNavigationAction, TagNavigationAction { tag in
+                    closeDetail()
+                    contentPath.append(TagSearchDestination(tag: tag))
+                })
+                .environment(\.searchNavigationAction, SearchNavigationAction { query in
+                    closeDetail()
+                    contentPath.append(GalleryQueryDestination(query: query))
+                })
+                .transition(.move(edge: .trailing).combined(with: .opacity))
+                .zIndex(1)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .clipped()
+    }
+
     @ViewBuilder
     private func macOSContentView(for tab: Tab) -> some View {
         switch tab {
         case .home:
-            GalleryListView(mode: .home, selection: $selectedGallery)
+            GalleryListView(mode: .home, selection: selection)
         case .subscription:
-            GalleryListView(mode: .subscription, selection: $selectedGallery)
+            GalleryListView(mode: .subscription, selection: selection)
         case .popular:
-            GalleryListView(mode: .popular, selection: $selectedGallery)
+            GalleryListView(mode: .popular, selection: selection)
         case .toplist:
-            GalleryListView(mode: .toplist(period: 15), selection: $selectedGallery)
+            GalleryListView(mode: .toplist(period: 15), selection: selection)
         case .favorites:
-            FavoritesView(selection: $selectedGallery)
+            FavoritesView(selection: selection)
         case .downloads:
             // 与设置页同理：标题交给窗口顶部工具栏，页内不再自建导航栈。
             DownloadsView(isPushed: true)
@@ -387,6 +478,17 @@ struct MainTabView: View {
         }
     }
 }
+
+#if os(macOS)
+/// macOS 主体栏的尺寸常量：列表/详情各自的宽度下限，以及两栏 ↔ 单栏的切换阈值。
+enum MacDetailLayout {
+    static let listMin: CGFloat = 340
+    static let listMax: CGFloat = 460
+    static let detailMin: CGFloat = 360
+    /// 可用内容宽度低于此值时回退单栏。
+    static var twoColumnMin: CGFloat { listMin + detailMin }
+}
+#endif
 
 #Preview {
     MainTabView()
