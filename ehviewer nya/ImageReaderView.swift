@@ -166,11 +166,19 @@ struct ImageReaderView: View {
         .ignoresSafeArea()
         #if os(iOS)
         .toolbar(.hidden, for: .navigationBar)
-        #else
-        .toolbar(.hidden)
         #endif
         .onAppear(perform: setupReader)
         .onDisappear(perform: cleanupReader)
+        #if os(macOS)
+        .onAppear {
+            NotificationCenter.default.post(
+                name: .readerVisibilityChanged, object: nil, userInfo: ["reading": true])
+        }
+        .onDisappear {
+            NotificationCenter.default.post(
+                name: .readerVisibilityChanged, object: nil, userInfo: ["reading": false])
+        }
+        #endif
         .task {
             await initializeReader()
             // Fix F2-2: 只有真正打开阅读器才记录历史 (从详情页 loadDetail 迁移到这里)
@@ -728,27 +736,85 @@ struct ImageReaderView: View {
 
     #if os(macOS)
     private func macOSPageReader(geometry: GeometryProxy) -> some View {
-        ZStack {
-            if vm.isDoublePageEnabled {
-                let spreadIdx = vm.currentSpreadIndex ?? 0
-                let spread = spreadIdx < vm.spreads.count
-                    ? vm.spreads[spreadIdx]
-                    : vm.spreads.last ?? PageSpread(id: 0, primaryPage: 0, secondaryPage: nil)
-                spreadPageView(spread: spread)
-            } else {
-                pageImage(index: vm.currentPage)
-            }
+        let isDouble = vm.isDoublePageEnabled
 
-            ScrollWheelPageNavigator(
-                onNext: { goToNextPage() },
-                onPrevious: { goToPreviousPage() },
-                isZoomed: isZoomed
+        let pages: [Int]
+        let currentIndex: Int
+        if isDouble {
+            let idx = vm.currentSpreadIndex ?? 0
+            currentIndex = idx
+            pages = idx < vm.spreads.count ? vm.spreads[idx].pages : []
+        } else {
+            currentIndex = vm.currentPage
+            pages = [vm.currentPage]
+        }
+
+        let current = spreadContent(pageIndex: currentIndex, pages: pages)
+        let next = neighborContent(offset: 1, from: currentIndex, isDouble: isDouble)
+        let prev = neighborContent(offset: -1, from: currentIndex, isDouble: isDouble)
+
+        return ZStack {
+            MacPageReader(
+                current: current,
+                next: next,
+                prev: prev,
+                scaleMode: scaleMode,
+                startPosition: startPosition,
+                direction: readingDirection,
+                isDoublePage: isDouble,
+                topInset: macOSToolbarInset,
+                onTurn: { forward in forward ? goToNextPage() : goToPreviousPage() },
+                onSingleTap: { location, size in
+                    handleTapZone(location: location, viewSize: size)
+                },
+                onZoomChanged: { isZoomed = $0 }
             )
+
+            if !pagesAreReady(pages) {
+                VStack(spacing: 12) {
+                    ForEach(pages, id: \.self) { p in
+                        if vm.image(at: p) == nil { pageLoadingIndicator(index: p) }
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
         }
         .onChange(of: vm.currentPage) { _, newPage in
             saveReadingProgress()
             Task { await vm.onPageChange(newPage) }
         }
+        // 即使没有叠加层，整展的每一页也交给看护，保证取消后能自愈
+        .task(id: pages.map { "\(vm.imageURLs[$0] ?? "")_\(vm.retryGeneration[$0, default: 0])" }
+                        .joined(separator: "|")) {
+            await withTaskGroup(of: Void.self) { group in
+                for p in pages {
+                    group.addTask { await vm.superviseLoading(of: p) }
+                }
+            }
+        }
+    }
+
+    /// 把一「展」的页码解析成翻页器需要的内容（已加载图片 + 就绪态）。
+    private func spreadContent(pageIndex: Int, pages: [Int]) -> MacSpreadContent {
+        let images = pages.compactMap { vm.image(at: $0) }
+        return MacSpreadContent(pageIndex: pageIndex,
+                                images: images,
+                                isReady: pages.allSatisfy { vm.image(at: $0) != nil })
+    }
+
+    /// 相邻展（offset = ±1）；双页按 spread 取，单页按页取，越界返回 nil。
+    private func neighborContent(offset: Int, from currentIndex: Int, isDouble: Bool) -> MacSpreadContent? {
+        let target = currentIndex + offset
+        if isDouble {
+            guard target >= 0, target < vm.spreads.count else { return nil }
+            return spreadContent(pageIndex: target, pages: vm.spreads[target].pages)
+        }
+        guard target >= 0, target < vm.totalPages else { return nil }
+        return spreadContent(pageIndex: target, pages: [target])
+    }
+
+    private func pagesAreReady(_ pages: [Int]) -> Bool {
+        pages.allSatisfy { vm.image(at: $0) != nil }
     }
     #endif
 
@@ -1297,8 +1363,11 @@ struct ImageReaderView: View {
                         .foregroundStyle(.white)
                         .padding(.horizontal, 32)
                         .padding(.vertical, 12)
-                        .background(.white.opacity(0.2), in: Capsule())
-                        .overlay(Capsule().stroke(.white.opacity(0.5), lineWidth: 1))
+                        .ehLiquidGlass(
+                            in: Capsule(),
+                            tint: EhReaderChrome.glassTint,
+                            interactive: true
+                        )
                 }
                 .padding(.bottom, max(40, geometry.safeAreaInsets.bottom + 20))
             }
@@ -1355,51 +1424,61 @@ struct ImageReaderView: View {
     private var topBar: some View {
         // 两枚玻璃胶囊而非一条通栏工具栏：阅读器的主体是图，
         // 通栏会在图上压出一条硬边，胶囊只占它需要的宽度。
-        HStack(spacing: 10) {
-            HStack(spacing: 6) {
-                Button(action: { dismiss() }) {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(EhReaderChrome.label)
-                }
+        GlassEffectContainer {
+            HStack(spacing: 10) {
+                HStack(spacing: 6) {
+                    Button(action: { dismiss() }) {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(EhReaderChrome.label)
+                    }
 
-                if let title = readerTitle {
-                    Text(title)
-                        .font(EhFont.caption)
-                        .foregroundStyle(EhReaderChrome.label)
-                        .lineLimit(1)
-                        .frame(maxWidth: 150, alignment: .leading)
+                    if let title = readerTitle {
+                        Text(title)
+                            .font(EhFont.caption)
+                            .foregroundStyle(EhReaderChrome.label)
+                            .lineLimit(1)
+                            .frame(maxWidth: 150, alignment: .leading)
+                    }
                 }
+                .padding(.horizontal, 14)
+                .frame(height: 38)
+                .ehLiquidGlass(
+                    in: Capsule(),
+                    tint: EhReaderChrome.glassTint,
+                    interactive: true
+                )
+
+                Spacer(minLength: 8)
+
+                // 双页与阅读方向只在底栏出现一次。
+                // 此前顶栏和底栏各有一份，同一个开关在屏幕上有两个位置、
+                // 两种样式，按哪个都行——这不是「快捷方式」，是重复。
+                HStack(spacing: 14) {
+                    Button { showPageGrid = true } label: {
+                        Image(systemName: "square.grid.2x2")
+                            .foregroundStyle(EhReaderChrome.label)
+                    }
+
+                    // 齿轮。这里原来画的是 sun.max，点开却是整个阅读设置面板——
+                    // 图标承诺的是亮度，打开的是设置。
+                    Button { showSettings = true } label: {
+                        Image(systemName: "gearshape")
+                            .foregroundStyle(EhReaderChrome.label)
+                    }
+                }
+                .font(.system(size: 15, weight: .medium))
+                .padding(.horizontal, 14)
+                .frame(height: 38)
+                .ehLiquidGlass(
+                    in: Capsule(),
+                    tint: EhReaderChrome.glassTint,
+                    interactive: true
+                )
             }
-            .padding(.horizontal, 14)
-            .frame(height: 38)
-            .ehReaderGlass(cornerRadius: 19)
-
-            Spacer(minLength: 8)
-
-            // 双页与阅读方向只在底栏出现一次。
-            // 此前顶栏和底栏各有一份，同一个开关在屏幕上有两个位置、
-            // 两种样式，按哪个都行——这不是「快捷方式」，是重复。
-            HStack(spacing: 14) {
-                Button { showPageGrid = true } label: {
-                    Image(systemName: "square.grid.2x2")
-                        .foregroundStyle(EhReaderChrome.label)
-                }
-
-                // 齿轮。这里原来画的是 sun.max，点开却是整个阅读设置面板——
-                // 图标承诺的是亮度，打开的是设置。
-                Button { showSettings = true } label: {
-                    Image(systemName: "gearshape")
-                        .foregroundStyle(EhReaderChrome.label)
-                }
-            }
-            .font(.system(size: 15, weight: .medium))
-            .padding(.horizontal, 14)
-            .frame(height: 38)
-            .ehReaderGlass(cornerRadius: 19)
+            .padding(.horizontal, EhSpacing.page)
+            .padding(.top, 50)
         }
-        .padding(.horizontal, EhSpacing.page)
-        .padding(.top, 50)
     }
 
     /// 顶栏胶囊里的画廊标题。
@@ -1408,9 +1487,10 @@ struct ImageReaderView: View {
     /// 必然已经填好（详情页是唯一入口），所以不必为它多发一次请求。
     /// 取不到就不显示，胶囊缩成只有返回键，不占无谓的宽度。
     private var readerTitle: String? {
-        guard let info = GalleryCache.shared.getDetail(gid: gid)?.info else { return nil }
-        let title = info.suitableTitle(preferJpn: AppSettings.shared.showJpnTitle)
-        return title.isEmpty ? nil : title
+//        guard let info = GalleryCache.shared.getDetail(gid: gid)?.info else { return nil }
+//        let title = info.suitableTitle(preferJpn: AppSettings.shared.showJpnTitle)
+//        return title.isEmpty ? nil : title
+        return nil
     }
 
     /// 底部页码文案 —— 双页时显示成 "12–13"
@@ -1466,6 +1546,8 @@ struct ImageReaderView: View {
                     .font(EhFont.mono(13))
                     .foregroundStyle(EhReaderChrome.tertiaryLabel)
             }
+            // 右→左阅读时整条进度行镜像：两侧页码换边、进度条从右往左
+            .environment(\.layoutDirection, readingDirection == .rightToLeft ? .rightToLeft : .leftToRight)
 
             // 四个模式块：双页 / 方向 / 自动翻页 / 护眼。
             // 这四项在阅读中随时可能要改，此前分散在设置面板与顶栏菜单里，
@@ -1485,12 +1567,26 @@ struct ImageReaderView: View {
             }
         }
         .padding(EhSpacing.page)
-        .ehReaderGlass(cornerRadius: EhRadius.card)
+        .ehLiquidGlass(
+            in: RoundedRectangle(cornerRadius: EhRadius.card, style: .continuous),
+            tint: EhReaderChrome.glassTint,
+            interactive: true
+        )
         .padding(.horizontal, EhSpacing.page)
         // 阅读器整屏忽略安全区（图要铺满），底栏就得自己把 Home Indicator
         // 的高度让出来，否则最后一排按钮被屏幕底边切掉——这条在带
         // Home Indicator 的机器上是必然发生，不是偶发。
         .padding(.bottom, max(8, safeAreaBottomInset))
+    }
+
+    /// macOS 窗口工具栏高度。阅读器整屏 ignoresSafeArea，GeometryProxy 报 0，
+    /// 只能问窗口要——否则图片会画到工具栏后面。
+    private var macOSToolbarInset: CGFloat {
+        #if os(macOS)
+        return NSApp.keyWindow?.contentView?.safeAreaInsets.top ?? 0
+        #else
+        return 0
+        #endif
     }
 
     /// 底部安全区高度。阅读器用了 ignoresSafeArea，GeometryProxy 报的是 0，
@@ -1554,7 +1650,7 @@ struct ImageReaderView: View {
                         .foregroundStyle(.white.opacity(0.8))
                         .padding(.horizontal, 10)
                         .padding(.vertical, 4)
-                        .background(.black.opacity(0.35), in: Capsule())
+                        .ehLiquidGlass(in: Capsule(), tint: EhReaderChrome.glassTint)
                 }
 
                 Spacer(minLength: 8)
@@ -2057,71 +2153,6 @@ struct EdgeSwipeDismissView: UIViewRepresentable {
             shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
         ) -> Bool {
             return false
-        }
-    }
-}
-#endif
-
-// MARK: - macOS Scroll Wheel Page Navigator
-
-#if os(macOS)
-/// macOS 滚轮翻页 — 累积 deltaY 超过阈值翻页
-struct ScrollWheelPageNavigator: NSViewRepresentable {
-    let onNext: () -> Void
-    let onPrevious: () -> Void
-    let isZoomed: Bool
-
-    func makeNSView(context: Context) -> ScrollWheelCaptureView {
-        let view = ScrollWheelCaptureView()
-        view.onNext = onNext
-        view.onPrevious = onPrevious
-        view.isZoomed = isZoomed
-        return view
-    }
-
-    func updateNSView(_ nsView: ScrollWheelCaptureView, context: Context) {
-        nsView.onNext = onNext
-        nsView.onPrevious = onPrevious
-        nsView.isZoomed = isZoomed
-    }
-
-    class ScrollWheelCaptureView: NSView {
-        var onNext: (() -> Void)?
-        var onPrevious: (() -> Void)?
-        var isZoomed: Bool = false
-        private var accumulatedDelta: CGFloat = 0
-        private let threshold: CGFloat = 40
-        private var lastScrollTime: Date = .distantPast
-
-        override func scrollWheel(with event: NSEvent) {
-            guard !isZoomed else {
-                super.scrollWheel(with: event)
-                return
-            }
-
-            let delta = event.scrollingDeltaY
-            let now = Date()
-            if now.timeIntervalSince(lastScrollTime) > 0.5 {
-                accumulatedDelta = 0
-            }
-            lastScrollTime = now
-
-            accumulatedDelta += delta
-
-            if accumulatedDelta > threshold {
-                accumulatedDelta = 0
-                onPrevious?()
-            } else if accumulatedDelta < -threshold {
-                accumulatedDelta = 0
-                onNext?()
-            }
-        }
-
-        override var acceptsFirstResponder: Bool { true }
-
-        override func hitTest(_ point: NSPoint) -> NSView? {
-            if isZoomed { return nil }
-            return frame.contains(point) ? self : nil
         }
     }
 }

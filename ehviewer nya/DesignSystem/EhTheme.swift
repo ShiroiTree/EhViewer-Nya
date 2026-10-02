@@ -104,22 +104,6 @@ enum EhColor {
     /// Sheet 底。深色 #1A1A1E / 浅色 #FFFFFF
     static let sheetBackground = Color.ehDynamic(light: 0xFFFFFF, dark: 0x1A1A1E)
 
-    // ── 浮起玻璃 ───────────────────────────────────
-    //
-    // 导航条与阅读器工具栏的底色。叠在 `.ultraThinMaterial` 之上使用：
-    // 材质负责模糊，这一层负责压暗/提亮到设计稿的观感。
-
-    static let glass = Color.ehDynamic(
-        light: 0xFAFAFC, lightAlpha: 0.90,
-        dark: 0x2C2C30, darkAlpha: 0.86
-    )
-
-    /// 玻璃层的描边
-    static let glassStroke = Color.ehDynamic(
-        light: 0x3C3C43, lightAlpha: 0.08,
-        dark: 0xEBEBF5, darkAlpha: 0.10
-    )
-
     // ── 分隔线 ─────────────────────────────────────
 
     /// 列表行之间的 hairline
@@ -232,4 +216,10 @@ enum EhReaderChrome {
     static let secondaryLabel = Color.white.opacity(0.65)
     static let tertiaryLabel = Color.white.opacity(0.42)
     static let fill = Color.white.opacity(0.14)
+    /// 阅读器液态玻璃的压暗色。
+    ///
+    /// 阅读器底色恒为纯黑，原生玻璃如果按系统主题取色会在浅色模式下
+    /// 变成黑底上的亮白面板，白色标签直接糊掉。用黑色 tint 压住，
+    /// 让 `label` / `secondaryLabel` 在两种主题下都保持可读。
+    static let glassTint = Color.black.opacity(0.35)
 }

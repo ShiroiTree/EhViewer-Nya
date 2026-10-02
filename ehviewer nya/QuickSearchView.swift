@@ -279,8 +279,17 @@ struct QuickSearchDrawerContent: View {
                                         .lineLimit(1)
                                 }
                             }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        .contextMenu {
+                            Button(role: .destructive) {
+                                vm.delete(search)
+                            } label: {
+                                Label("删除", systemImage: "trash")
+                            }
+                        }
                     }
                     .onDelete { vm.delete(at: $0) }
                 }
@@ -288,10 +297,10 @@ struct QuickSearchDrawerContent: View {
                 .scrollContentBackground(.hidden)
             }
         }
-        // 抽屉底色与 App 一致，并给左边缘一条细线把它与内容区分开。
-        // 此前用的是系统默认底色，深浅模式下都和主界面对不上，
-        // 看起来像贴上去的另一个 App 的浮窗。
-        .background(EhColor.background)
+        // 底色交给 RightDrawerOverlay 的原生液态玻璃（GalleryListView 里的
+        // `.glassEffect(.regular, ...)`）。此前这里又铺了一层不透明的
+        // EhColor.background，把底下的玻璃整个盖住，抽屉就变成了纯色块。
+        // 保留左边缘细线，仍能把抽屉与主界面区分开。
         .overlay(alignment: .leading) {
             Rectangle()
                 .fill(EhColor.hairline)
@@ -421,6 +430,16 @@ class QuickSearchViewModel {
             }
         }
         searches.remove(atOffsets: offsets)
+    }
+
+    func delete(_ record: QuickSearchRecord) {
+        guard let id = record.id else { return }
+        do {
+            try EhDatabase.shared.deleteQuickSearch(id: id)
+        } catch {
+            debugLog("Failed to delete quick search: \(error)")
+        }
+        searches.removeAll { $0.id == record.id }
     }
 }
 

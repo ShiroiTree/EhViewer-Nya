@@ -44,12 +44,12 @@ struct AppBackButton: View {
                 .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(style == .dark ? .white : Color.primary)
                 .padding(8)
-                .background(
+                .glassEffect(
                     style == .dark
-                        ? AnyShapeStyle(.black.opacity(0.5))
-                        : AnyShapeStyle(.ultraThinMaterial)
+                        ? .regular.tint(Color.black.opacity(0.5)).interactive()
+                        : .regular.interactive(),
+                    in: .circle
                 )
-                .clipShape(Circle())
         }
         .accessibilityLabel("返回")
     }

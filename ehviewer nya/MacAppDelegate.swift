@@ -7,6 +7,24 @@
 
 #if os(macOS)
 import AppKit
+import SwiftUI
+
+/// 让窗口内容延伸到顶部工具栏之下，滚动内容才会进入工具栏背后，
+/// 由系统在 macOS 26 下自动施加的 scroll edge effect 模糊。
+///
+/// 只设置 `fullSizeContentView`：**不要**再设 `titlebarAppearsTransparent`，
+/// 那会把系统工具栏自身的毛玻璃底色一并关掉，反而变成实心。
+struct WindowUnderToolbarConfigurator: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async { view.window?.styleMask.insert(.fullSizeContentView) }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        DispatchQueue.main.async { nsView.window?.styleMask.insert(.fullSizeContentView) }
+    }
+}
 
 class MacAppDelegate: NSObject, NSApplicationDelegate {
 

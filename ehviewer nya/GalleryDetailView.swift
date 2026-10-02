@@ -77,6 +77,8 @@ struct GalleryDetailView: View {
     @Environment(\.dismiss) private var dismiss
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    #else
+    @Environment(\.ehToolbarTopInset) private var toolbarTopInset
     #endif
 
     var body: some View {
@@ -85,7 +87,7 @@ struct GalleryDetailView: View {
                 headerSection
                     // iPhone 上返回按钮是浮在内容之上的 overlay（导航栏被隐藏了），
                     // 不让开就正好压在封面左上角：按钮本身 33pt 高，加上 4pt 顶距。
-                    .padding(.top, backButtonClearance)
+                    .padding(.top, headerTopClearance)
                 Divider()
                 actionBar
                     .padding(.vertical, 10)
@@ -265,8 +267,7 @@ struct GalleryDetailView: View {
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(.white)
                 .padding(8)
-                .background(.black.opacity(0.5))
-                .clipShape(Circle())
+                .glassEffect(.regular.tint(Color.black.opacity(0.5)).interactive(), in: .circle)
         }
     }
 
@@ -351,13 +352,17 @@ struct GalleryDetailView: View {
     }
 
     /// 详情页封面尺寸 (对齐 Android Settings.KEY_DETAIL_SIZE)
-    /// 浮起返回按钮占掉的高度。iPhone 才有（iPad/Mac 用系统导航栏）。
-    private var backButtonClearance: CGFloat {
+    /// 详情页首行的顶部让位高度。
+    ///
+    /// iPhone 上是浮起返回按钮占掉的高度；macOS 上内容铺到窗口工具栏下方，
+    /// 与列表页共用同一让位常量，避免封面被工具栏盖住。
+    private var headerTopClearance: CGFloat {
         #if os(iOS)
         // 17pt 图标 + 上下各 8pt 内边距 = 33pt，再加 overlay 自己的 4pt 顶距
         horizontalSizeClass == .compact ? 41 : 0
         #else
-        0
+        // 详情和列表一样铺到窗口工具栏下方，用同一让位高度，否则封面被工具栏盖住
+        EhSize.macTopContentClearance + toolbarTopInset
         #endif
     }
 

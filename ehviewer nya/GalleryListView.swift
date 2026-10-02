@@ -52,6 +52,9 @@ struct GalleryListView: View {
     /// 跳页模式: 0 = 快捷跳转, 1 = 日期选择, 2 = 页码跳转
     @State private var jumpMode: Int = 0
 
+    /// 窗口工具栏高度（macOS 有值）。内容铺到工具栏下后，浮起的搜索胶囊据此下移。
+    @Environment(\.ehToolbarTopInset) private var toolbarTopInset
+
     /// 标签导航路径 — iPad 双栏布局中支持标签推入左侧
     @State private var sidebarPath = NavigationPath()
 
@@ -442,9 +445,6 @@ struct GalleryListView: View {
             }
         }
         // ★ 已移除 compactContent 级 .task — 避免与 body .task 重复加载，由 body .task 统一管理
-        .sheet(isPresented: $viewModel.showJumpDialog) {
-            jumpSheet
-        }
         .alert("跳页", isPresented: $viewModel.showGoToDialog) {
             TextField("页码", text: $viewModel.goToPageInput)
                 #if os(iOS)
@@ -527,9 +527,6 @@ struct GalleryListView: View {
             if viewModel.galleries.isEmpty {
                 viewModel.loadGalleries(mode: effectiveMode)
             }
-        }
-        .sheet(isPresented: $viewModel.showJumpDialog) {
-            jumpSheet
         }
         .alert("跳页", isPresented: $viewModel.showGoToDialog) {
             TextField("页码", text: $viewModel.goToPageInput)
@@ -662,9 +659,6 @@ struct GalleryListView: View {
             }
         }
         .listStyle(.plain)
-        #if os(macOS)
-        .scrollEdgeEffectHidden(true, for: .top)
-        #endif
         #if os(iOS)
         // 向下滚收起底部导航条，向上滚放出来
         .ehTabBarAutoHide()
@@ -701,9 +695,10 @@ struct GalleryListView: View {
                 }
             } else {
                 List(selection: selectionBinding) {
-                        // 顶部空白占位：给浮起的搜索胶囊让位，避免初始遮住第一条
+                        // 顶部空白占位：给浮起的搜索胶囊让位，避免初始遮住第一条。
+                        // 再加上工具栏高度——内容现在铺到了工具栏下方。
                         Color.clear
-                            .frame(height: 54)
+                            .frame(height: EhSize.macTopContentClearance + toolbarTopInset)
                             .listRowInsets(EdgeInsets())
                             .listRowSeparator(.hidden)
                             .listRowBackground(Color.clear)
@@ -742,12 +737,12 @@ struct GalleryListView: View {
                         }
                     }
                     .listStyle(.sidebar)
-                    .scrollEdgeEffectHidden(true, for: .top)
 //                    .safeAreaInset(edge: .top, spacing: 0) {
 //                        Color.clear.frame(height: 54)
 //                    }
                     .overlay(alignment: .top) {
                         searchBarView
+                            .padding(.top, toolbarTopInset)
                     }
                     .refreshable {
                         await viewModel.refreshAsync(mode: effectiveMode)
@@ -794,9 +789,6 @@ struct GalleryListView: View {
                 applyQuickSearch(search)
                 selectedQuickSearch = nil
             }
-        }
-        .sheet(isPresented: $viewModel.showJumpDialog) {
-            jumpSheet
         }
         .alert("跳页", isPresented: $viewModel.showGoToDialog) {
             TextField("页码", text: $viewModel.goToPageInput)
@@ -1023,20 +1015,21 @@ struct GalleryListView: View {
     @ToolbarContentBuilder
     private var galleryToolbar: some ToolbarContent {
         // 其余按钮 (对齐 Android FAB secondaryButtons)
-        ToolbarItem(placement: .automatic) {
-            HStack(spacing: 4) {
-                // 快速搜索 (对齐 Android QuickSearch)
-                Button { showQuickSearch = true } label: {
-                    Image(systemName: "bookmark")
-                }
+        ToolbarItemGroup(placement: .automatic) {
+            // 快速搜索 (对齐 Android QuickSearch)
+            Button { showQuickSearch.toggle() } label: {
+                Image(systemName: showQuickSearch ? "bookmark.fill" : "bookmark")
+            }
 
-                // 跳页 (对齐 Android showGoToDialog: 统一使用跳页 Sheet，支持页码/日期/快捷跳转)
-                Button {
-                    viewModel.showJumpDialog = true
-                } label: {
-                    Image(systemName: "arrow.up.arrow.down")
-                }
-                .disabled(viewModel.galleries.isEmpty)
+            // 跳页 (对齐 Android showGoToDialog: 支持页码/日期/快捷跳转；按钮开关浮层)
+            Button {
+                viewModel.showJumpDialog.toggle()
+            } label: {
+                Image(systemName: "arrow.up.arrow.down")
+            }
+            .disabled(viewModel.galleries.isEmpty)
+            .popover(isPresented: $viewModel.showJumpDialog) {
+                jumpPopover
             }
         }
     }
@@ -1111,8 +1104,17 @@ struct GalleryListView: View {
         return f.string(from: date)
     }
 
-    private var jumpSheet: some View {
-        NavigationStack {
+    /// 跳页浮层。用 `.popover` 从工具栏按钮弹出，系统会自动给它套上液态玻璃；
+    /// 所以这里不能铺任何不透明底色，否则玻璃会被盖住。
+    private var jumpPopover: some View {
+        VStack(spacing: 0) {
+            Text("跳页")
+                .font(EhFont.title)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, EhSpacing.page)
+                .padding(.top, 14)
+                .padding(.bottom, 8)
+
             ScrollView {
                 VStack(spacing: 16) {
                     // 模式切换 (对齐 Android JumpDateSelector 的 toggle 按钮)
@@ -1235,33 +1237,31 @@ struct GalleryListView: View {
                 }
                 .padding(.bottom, 16)
             }
-            .navigationTitle("跳页")
-            #if os(iOS)
-            .navigationBarTitleDisplayMode(.inline)
-            #endif
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("取消") { viewModel.showJumpDialog = false }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("跳转") {
-                        viewModel.showJumpDialog = false
-                        if jumpMode == 0 {
-                            viewModel.goToJump("jump=\(selectedJumpNode)", mode: effectiveMode)
-                        } else if jumpMode == 1 {
-                            viewModel.goToDate(viewModel.jumpDate, mode: effectiveMode)
-                        } else if jumpMode == 2 {
-                            if let page = Int(viewModel.goToPageInput), page >= 1,
-                               page <= viewModel.totalPages {
-                                viewModel.goToPage(page - 1, mode: effectiveMode)
-                            }
-                            viewModel.goToPageInput = ""
-                        }
-                    }
-                }
+            HStack(spacing: 10) {
+                Button("取消") { viewModel.showJumpDialog = false }
+                    .buttonStyle(EhTintedButtonStyle(height: 40))
+                Button("跳转") { performJump() }
+                    .buttonStyle(EhFilledButtonStyle(height: 40))
             }
+            .padding(14)
         }
-        .presentationDetents([.medium, .large])
+        .frame(minWidth: 300, idealWidth: 340, maxWidth: 420)
+        .frame(height: 440)
+    }
+
+    private func performJump() {
+        viewModel.showJumpDialog = false
+        if jumpMode == 0 {
+            viewModel.goToJump("jump=\(selectedJumpNode)", mode: effectiveMode)
+        } else if jumpMode == 1 {
+            viewModel.goToDate(viewModel.jumpDate, mode: effectiveMode)
+        } else if jumpMode == 2 {
+            if let page = Int(viewModel.goToPageInput), page >= 1,
+               page <= viewModel.totalPages {
+                viewModel.goToPage(page - 1, mode: effectiveMode)
+            }
+            viewModel.goToPageInput = ""
+        }
     }
 
     /// 当前错误是不是 IP 封禁 (issue #1: 以前这种情况只显示一片空白)
@@ -2423,8 +2423,17 @@ struct RightDrawerOverlay<DrawerContent: View>: View {
             }
                 .frame(width: drawerWidth)
                 .frame(maxHeight: .infinity, alignment: .top)
-                .background(.regularMaterial)
-                .clipShape(UnevenRoundedRectangle(topLeadingRadius: 12, bottomLeadingRadius: 12))
+                .glassEffect(
+                    .regular,
+                    in: UnevenRoundedRectangle(
+                        topLeadingRadius: EhRadius.control,
+                        bottomLeadingRadius: EhRadius.control
+                    )
+                )
+                .clipShape(UnevenRoundedRectangle(
+                    topLeadingRadius: EhRadius.control,
+                    bottomLeadingRadius: EhRadius.control
+                ))
                 .shadow(color: .black.opacity(overlayOpacity > 0.05 ? 0.15 : 0), radius: 8, x: -3)
                 .offset(x: currentOffset)
                 .gesture(

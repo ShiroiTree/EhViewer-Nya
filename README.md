@@ -1,7 +1,7 @@
 # EhViewer-Nya
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.2.0-brightgreen" alt="Version"/>
+  <img src="https://img.shields.io/badge/version-0.4.1-brightgreen" alt="Version"/>
   <img src="https://img.shields.io/badge/platform-iOS%2026.0%2B%20%7C%20macOS%2026%2B-blue" alt="Platform"/>
   <img src="https://img.shields.io/badge/swift-6.0-orange" alt="Swift 6.0"/>
   <img src="https://img.shields.io/badge/license-Apache--2.0%20AND%20MIT-green" alt="License"/>

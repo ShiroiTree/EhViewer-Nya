@@ -28,8 +28,15 @@ class SavedSearchViewModel {
 
     func add(name: String, query: SearchQuery) {
         do {
+            let json = query.jsonString
+            // 去重：同一查询已存在就先删旧行，避免重复条目
+            for existing in searches where existing.query == json {
+                if let id = existing.id {
+                    try? EhDatabase.shared.deleteSavedSearch(id: id)
+                }
+            }
             try EhDatabase.shared.insertSavedSearch(
-                SavedSearchRecord(name: name, query: query.jsonString)
+                SavedSearchRecord(name: name, query: json)
             )
             loadSearches()
         } catch {
@@ -47,6 +54,17 @@ class SavedSearchViewModel {
             }
         }
         searches.remove(atOffsets: offsets)
+    }
+
+    /// 删除单条（供右键菜单用：macOS 上滑动删除不好发现）
+    func delete(_ record: SavedSearchRecord) {
+        guard let id = record.id else { return }
+        do {
+            try EhDatabase.shared.deleteSavedSearch(id: id)
+        } catch {
+            debugLog("Failed to delete saved search: \(error)")
+        }
+        searches.removeAll { $0.id == record.id }
     }
 }
 
@@ -79,6 +97,9 @@ struct SavedSearchView: View {
                                 row(record)
                             }
                             .buttonStyle(.plain)
+                            .contextMenu {
+                                Button("删除", role: .destructive) { vm.delete(record) }
+                            }
                         }
                         .onDelete { vm.delete(at: $0) }
                     }

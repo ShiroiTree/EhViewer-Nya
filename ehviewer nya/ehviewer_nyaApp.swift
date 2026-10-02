@@ -229,4 +229,6 @@ extension Notification.Name {
     static let ehDiskFull = Notification.Name("ehDiskFull")
     /// 全局错误展示 (GlobalErrorBoundary 监听)
     static let ehGlobalError = Notification.Name("ehGlobalError")
+    /// 阅读器进入/退出（userInfo["reading"]: Bool）—— macOS 据此自动收起/恢复侧栏
+    static let readerVisibilityChanged = Notification.Name("readerVisibilityChanged")
 }

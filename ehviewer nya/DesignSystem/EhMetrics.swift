@@ -109,6 +109,14 @@ enum EhSize {
     /// 「继续阅读」条的小封面
     static let resumeThumbnail = CGSize(width: 40, height: 56)
 
+    /// macOS 内容顶部让位的基础高度（不含窗口工具栏）。
+    ///
+    /// 主体栏内容在 `MainTabView.macDetail` 里铺到工具栏下方
+    /// （`ignoresSafeArea(.container, edges: .top)`），列表页与详情页都要让开
+    /// 这段空间。实际让位高度 = 本常量 + `\.ehToolbarTopInset`（窗口工具栏高度）。
+    /// 列表页与详情页共用同一个常量，两栏首行才不会上下错位。
+    static let macTopContentClearance: CGFloat = 54
+
     /// 浮起导航条
     static let tabBarHeight: CGFloat = 58
     static let tabBarRadius: CGFloat = 29
@@ -133,26 +141,11 @@ enum EhSize {
 // MARK: - 玻璃层
 
 extension View {
-    /// 浮起玻璃：模糊材质 + 设计稿指定的压暗层 + 细描边。
+    /// 原生液态玻璃 —— 全 App 浮起控件的唯一玻璃 API。
     ///
-    /// 模糊交给系统材质而不是自绘 `.blur`，因为材质走的是优化过的合成路径；
-    /// 上面再叠一层半透明色把观感压到设计稿的值。
-    func ehGlass(cornerRadius: CGFloat) -> some View {
-        self.background {
-            ZStack {
-                Rectangle().fill(.ultraThinMaterial)
-                Rectangle().fill(EhColor.glass)
-            }
-            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .strokeBorder(EhColor.glassStroke, lineWidth: 0.5)
-            }
-        }
-    }
-
-    /// 原生液态玻璃。主页面浮起控件（搜索栏、过滤胶囊、浮起导航条）用它，
-    /// 替代自绘的 ehGlass；阅读器等场合仍用 ehGlass。
+    /// 搜索栏、浮起导航条、过滤胶囊、工具条、提示条等一律用它，
+    /// 不再自绘材质。阅读器底是纯黑，用 `EhReaderChrome.glassTint` 压暗，
+    /// 保证白色标签可读。
     func ehLiquidGlass<S: Shape>(
         in shape: S, tint: Color? = nil, interactive: Bool = false
     ) -> some View {
@@ -160,26 +153,6 @@ extension View {
         if let tint { glass = glass.tint(tint) }
         if interactive { glass = glass.interactive() }
         return self.glassEffect(glass, in: shape)
-    }
-
-    /// 阅读器专用玻璃：永远是深色。
-    ///
-    /// 阅读器的底色恒为纯黑（省 OLED 电，也不跟画面抢注意力），
-    /// 而 ehGlass 跟随系统明暗——浅色模式下就变成黑底上贴几块亮白面板，
-    /// 亮度差刺眼，而且和画面完全不搭。这里不跟随主题。
-    func ehReaderGlass(cornerRadius: CGFloat) -> some View {
-        self.background {
-            ZStack {
-                Rectangle().fill(.ultraThinMaterial)
-                Rectangle().fill(Color.black.opacity(0.55))
-            }
-            .environment(\.colorScheme, .dark)
-            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.12), lineWidth: 0.5)
-            }
-        }
     }
 
     /// 卡面容器
@@ -192,5 +165,21 @@ extension View {
                         .strokeBorder(EhColor.cardStroke, lineWidth: 0.5)
                 }
         }
+    }
+}
+
+// MARK: - 窗口工具栏高度
+
+/// 窗口顶部工具栏在内容坐标系里的高度（仅 macOS 有值，其它平台恒为 0）。
+///
+/// 内容铺到工具栏下方后，浮起的搜索胶囊等控件据此下移，避免被工具栏盖住。
+private struct EhToolbarTopInsetKey: EnvironmentKey {
+    static let defaultValue: CGFloat = 0
+}
+
+extension EnvironmentValues {
+    var ehToolbarTopInset: CGFloat {
+        get { self[EhToolbarTopInsetKey.self] }
+        set { self[EhToolbarTopInsetKey.self] = newValue }
     }
 }

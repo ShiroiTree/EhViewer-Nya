@@ -88,7 +88,7 @@ struct TagSelectorView: View {
                     }
                     .padding(.horizontal, EhSpacing.page)
                     .padding(.vertical, 10)
-                    .background(.regularMaterial)
+                    .glassEffect(.regular.interactive(), in: Rectangle())
                 }
             }
             .task { await loadNamespaces() }

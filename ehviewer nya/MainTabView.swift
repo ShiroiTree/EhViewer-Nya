@@ -21,6 +21,8 @@ struct MainTabView: View {
     @State private var selectedGallery: GalleryInfo?
     /// 标签导航路径 — 支持从 Detail 列点击标签推入新画廊列表到 Content 列
     @State private var contentPath = NavigationPath()
+    /// 侧栏可见性。阅读器打开时收成 detailOnly（阅读器不显示工具栏，否则没法手动收展）。
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
     private static let detailTransitionAnimation = Animation.easeInOut(duration: 0.26)
 
@@ -132,7 +134,7 @@ struct MainTabView: View {
         let _ = Self._printChanges()  // ★ 诊断: 精确显示哪个属性触发了 body 重新求值
         #endif
         #if os(macOS)
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
             // 「我的」不占侧栏。它的内容（账号资料、图片配额）已并入设置页的
             // 「账号」分类——侧栏本来就是平铺全部入口，再单开一格只有一个
             // 二级页的入口，反而多一层。（iOS 的底部栏仍保留「我的」。）
@@ -148,6 +150,15 @@ struct MainTabView: View {
         .onChange(of: selectedTab) { _, newTab in
             closeDetail()
             contentPath = NavigationPath()
+        }
+        .onAppear {
+            // 启动时确保左侧边栏展开：macOS 的窗口状态恢复可能把上次收起的
+            // 侧栏带回来，首次出现时强制展开。
+            columnVisibility = .all
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .readerVisibilityChanged)) { note in
+            let reading = (note.userInfo?["reading"] as? Bool) ?? false
+            columnVisibility = reading ? .detailOnly : .all
         }
         .onReceive(NotificationCenter.default.publisher(for: .navigateToHome)) { _ in
             selectedTab = .home
@@ -285,8 +296,11 @@ struct MainTabView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    /// 详情栏：只在有选中画廊时由主体 `HStack` 加入，所以不存在空占位状态。
-    private func galleryDetailColumn(_ gallery: GalleryInfo) -> some View {
+    /// 详情栏：只在有选中画廊时由主体容器加入，所以不存在空占位状态。
+    ///
+    /// 紧凑模式（窄窗）详情覆盖在列表之上，点标签/上传者要先撤回详情再推列表，
+    /// 否则会被详情盖住；宽屏模式详情并排常驻，直接推入列表栈即可。
+    private func galleryDetailColumn(_ gallery: GalleryInfo, isCompact: Bool) -> some View {
         NavigationStack {
             GalleryDetailView(gallery: gallery)
                 .id(gallery.gid)
@@ -294,9 +308,11 @@ struct MainTabView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .environment(\.tagNavigationAction, TagNavigationAction { tag in
+            if isCompact { closeDetail() }
             contentPath.append(TagSearchDestination(tag: tag))
         })
         .environment(\.searchNavigationAction, SearchNavigationAction { query in
+            if isCompact { closeDetail() }
             contentPath.append(GalleryQueryDestination(query: query))
         })
     }
@@ -311,82 +327,56 @@ struct MainTabView: View {
     /// 总和恰等于可用宽度，详情不会溢出，侧栏也不会被挤扁。
     @ViewBuilder
     private var macDetail: some View {
-        GeometryReader { geo in
-            let width = geo.size.width
-            if width < MacDetailLayout.twoColumnMin {
-                compactColumn
-            } else {
+        GeometryReader { outer in
+            GeometryReader { geo in
+                let width = geo.size.width
+                let isCompact = width < MacDetailLayout.twoColumnMin
                 let listWidth = min(
                     max(MacDetailLayout.listMin, width * 0.42),
                     MacDetailLayout.listMax
                 )
                 let detailWidth = max(MacDetailLayout.detailMin, width - listWidth)
-                HStack(spacing: 0) {
-                    // 没选中时列表铺满；选中后收窄，让详情滑入并排。
+
+                // 只换布局算法、不换子视图树：galleryListColumn 始终是第一个子视图，
+                // 跨越阈值时承载列表的 NSOutlineView 不会被 dismantle。否则 AppKit 的
+                // viewDidEndLiveResize 会在 SwiftUI 拆解 AttributeGraph 途中同步重入并 abort。
+                let layout: AnyLayout = isCompact
+                    ? AnyLayout(ZStackLayout(alignment: .topLeading))
+                    : AnyLayout(HStackLayout(spacing: 0))
+
+                layout {
                     galleryListColumn
-                        .frame(width: selectedGallery == nil ? width : listWidth)
+                        .frame(width: (isCompact || selectedGallery == nil) ? width : listWidth)
+
                     if let gallery = selectedGallery {
-                        galleryDetailColumn(gallery)
-                            .frame(width: detailWidth)
+                        galleryDetailColumn(gallery, isCompact: isCompact)
+                            .frame(width: isCompact ? width : detailWidth)
                             .transition(.move(edge: .trailing).combined(with: .opacity))
+                            .zIndex(isCompact ? 1 : 0)
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                 .clipped()
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // 内容铺到窗口工具栏下方，滚动内容才会进入工具栏背后被原生玻璃模糊。
+            // 工具栏高度通过 environment 下发，供浮起的搜索胶囊让位。
+            .ignoresSafeArea(.container, edges: .top)
+            .environment(\.ehToolbarTopInset, outer.safeAreaInsets.top)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .toolbar {
             if selectedGallery != nil {
-                ToolbarItem(placement: .navigation) {
+                ToolbarItem(placement: .primaryAction) {
                     Button {
                         closeDetail()
                     } label: {
-                        Image(systemName: "chevron.backward")
+                        Image(systemName: "chevron.forward")
                     }
                     .help("关闭详情")
                 }
+                ToolbarSpacer()
             }
         }
-    }
-
-    /// 窄窗单栏：列表与详情二选一，手搓滑动过渡。
-    ///
-    /// macOS 的 NavigationStack push 不产生动画（`withAnimation` 也压不出过渡），所以
-    /// 详情不再 push 进栈，而是叠在列表之上由 `.transition` 滑入；列表栈只保留标签/查询
-    /// 的推入导航。关闭动作由标题栏那个液态玻璃按钮提供（见 macDetail 的 toolbar）。
-    private var compactColumn: some View {
-        ZStack {
-            NavigationStack(path: $contentPath) {
-                macOSContentView(for: selectedTab)
-                    .navigationDestination(for: TagSearchDestination.self) { dest in
-                        GalleryListView(mode: .tag(keyword: dest.tag), selection: selection)
-                    }
-                    .navigationDestination(for: GalleryQueryDestination.self) { dest in
-                        GalleryListView(mode: .search(dest.query), selection: selection)
-                    }
-            }
-            if let gallery = selectedGallery {
-                NavigationStack {
-                    GalleryDetailView(gallery: gallery)
-                        .id(gallery.gid)
-                        .background(.background)
-                }
-                // 在详情里点标签/上传者时，先撤回详情再推列表，否则会被详情盖住。
-                .environment(\.tagNavigationAction, TagNavigationAction { tag in
-                    closeDetail()
-                    contentPath.append(TagSearchDestination(tag: tag))
-                })
-                .environment(\.searchNavigationAction, SearchNavigationAction { query in
-                    closeDetail()
-                    contentPath.append(GalleryQueryDestination(query: query))
-                })
-                .transition(.move(edge: .trailing).combined(with: .opacity))
-                .zIndex(1)
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .clipped()
     }
 
     @ViewBuilder

@@ -117,6 +117,7 @@ struct RootView: View {
         // 主体在更宽时才并排列表+详情（见 MainTabView 的 macDetail），窄窗回退单栏；
         // 侧栏始终保留最小宽度，不会被压到图标消失。
         .frame(minWidth: 560, minHeight: 560)
+        .background(WindowUnderToolbarConfigurator())
         #endif
         // 隐私遮罩必须在提示层之外、最上面一层：
         // 系统在 App 失活的瞬间给界面拍快照，那张图会出现在 App 切换器里。

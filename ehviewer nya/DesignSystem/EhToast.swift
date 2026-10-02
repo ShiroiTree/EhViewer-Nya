@@ -121,7 +121,7 @@ private struct EhToastHost: ViewModifier {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 11)
-        .ehGlass(cornerRadius: 22)
+        .ehLiquidGlass(in: Capsule())
         .shadow(color: .black.opacity(0.16), radius: 12, y: 4)
         .padding(.bottom, bottomInset)
         .transition(.move(edge: .bottom).combined(with: .opacity))

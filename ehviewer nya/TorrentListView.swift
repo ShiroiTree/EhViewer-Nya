@@ -65,7 +65,7 @@ struct TorrentListView: View {
                         .font(.footnote)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 8)
-                        .background(.ultraThinMaterial, in: Capsule())
+                        .glassEffect(.regular, in: .capsule)
                         .padding(.bottom, 24)
                         .transition(.opacity)
                 }

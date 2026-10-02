@@ -10,9 +10,13 @@
 #   1. 已安装 Xcode 26+ 并登录 Apple Developer 账号
 #   2. Keychain 中已导入 "Developer ID Application" 证书
 #   3. 配置环境变量（直接 export 或写入 .env 文件）:
+#        TEAM_ID            — 开发者团队 ID（必填）
+#        公证凭据二选一:
+#          NOTARY_PROFILE   — 钥匙串里的 notarytool profile
+#                             (xcrun notarytool store-credentials <name> ...)
 #        APPLE_ID           — Apple 开发者账号邮箱
-#        TEAM_ID            — 开发者团队 ID
 #        APP_SPECIFIC_PASSWORD — App 专用密码
+#        (设了 NOTARY_PROFILE 就不需要 APPLE_ID / APP_SPECIFIC_PASSWORD)
 #
 # 输出:
 #   build/EhViewer-Nya-<version>.dmg
@@ -48,6 +52,8 @@ ARCHIVE_PATH="$BUILD_DIR/${APP_NAME}.xcarchive"
 EXPORT_DIR="$BUILD_DIR/export"
 APP_PATH="$EXPORT_DIR/${APP_NAME}.app"
 DMG_DIR="$BUILD_DIR/dmg_staging"
+SOURCE_ENTITLEMENTS="$PROJECT_DIR/ehviewer nya/ehviewer_nya.entitlements"
+DIST_ENTITLEMENTS="$BUILD_DIR/entitlements-dist.plist"
 
 # ─────────────────────────── 构建模式 ───────────────────────────
 # dist  — Developer ID 签名 + 公证 + DMG，需要付费账号，产物可直接分发
@@ -122,10 +128,15 @@ check_prerequisites() {
     # notarytool
     xcrun notarytool --version &>/dev/null || fail "未找到 notarytool (需要 Xcode 13+)"
 
-    # 环境变量
-    [[ -n "${APPLE_ID:-}" ]]              || fail "缺少 APPLE_ID 环境变量 (Apple 开发者邮箱)"
-    [[ -n "${TEAM_ID:-}" ]]               || fail "缺少 TEAM_ID 环境变量 (开发者团队 ID)"
-    [[ -n "${APP_SPECIFIC_PASSWORD:-}" ]] || fail "缺少 APP_SPECIFIC_PASSWORD 环境变量 (App 专用密码)"
+    # 公证凭据: 优先用钥匙串 profile (xcrun notarytool store-credentials)，
+    # 否则回退到 Apple ID + App 专用密码。
+    if [[ -n "${NOTARY_PROFILE:-}" ]]; then
+        info "  公证凭据: keychain profile '$NOTARY_PROFILE'"
+    else
+        [[ -n "${APPLE_ID:-}" ]]              || fail "缺少 APPLE_ID 环境变量 (或设置 NOTARY_PROFILE 用钥匙串凭据)"
+        [[ -n "${APP_SPECIFIC_PASSWORD:-}" ]] || fail "缺少 APP_SPECIFIC_PASSWORD 环境变量 (或设置 NOTARY_PROFILE)"
+    fi
+    [[ -n "${TEAM_ID:-}" ]] || fail "缺少 TEAM_ID 环境变量 (开发者团队 ID)"
 
     # Developer ID Application 证书
     local cert_name
@@ -137,6 +148,16 @@ check_prerequisites() {
     info "  签名身份: $SIGNING_IDENTITY"
 
     success "环境检查通过"
+}
+
+# keychain-access-groups 是受限 entitlement，值里的 $(AppIdentifierPrefix) 只能由
+# 描述文件展开。仓库不带 Developer ID 描述文件，带它归档会直接报
+# "requires a provisioning profile"。本 App 非沙盒、也不跨 App 共享钥匙串，
+# 用默认访问组即可（EhCredentialStore 不指定 access group），所以分发构建去掉它。
+prepare_entitlements() {
+    cp "$SOURCE_ENTITLEMENTS" "$DIST_ENTITLEMENTS"
+    /usr/libexec/PlistBuddy -c "Delete :keychain-access-groups" "$DIST_ENTITLEMENTS" 2>/dev/null || true
+    info "分发用 entitlements: 已去掉 keychain-access-groups"
 }
 
 # ─────────────────────────── 1. 构建 Archive ───────────────────────────
@@ -180,6 +201,7 @@ build_archive() {
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO
     else
+        prepare_entitlements
         info "构建 Release Archive..."
         run_archive \
             -project "$PROJECT_FILE" \
@@ -189,6 +211,7 @@ build_archive() {
             -archivePath "$ARCHIVE_PATH" \
             CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="$SIGNING_IDENTITY" \
+            CODE_SIGN_ENTITLEMENTS="$DIST_ENTITLEMENTS" \
             DEVELOPMENT_TEAM="$TEAM_ID" \
             OTHER_CODE_SIGN_FLAGS="--options runtime --timestamp"
     fi
@@ -277,7 +300,7 @@ deep_codesign() {
 
     # 对 .app 整体深度签名
     codesign --force --deep --options runtime --timestamp \
-        --entitlements "$PROJECT_DIR/ehviewer nya/ehviewer_nya.entitlements" \
+        --entitlements "$DIST_ENTITLEMENTS" \
         --sign "$SIGNING_IDENTITY" \
         "$APP_PATH"
 
@@ -369,10 +392,14 @@ notarize_dmg() {
 
     local log_file="$BUILD_DIR/notarization.log"
 
-    xcrun notarytool submit "$DMG_PATH" \
-        --apple-id "$APPLE_ID" \
-        --team-id "$TEAM_ID" \
-        --password "$APP_SPECIFIC_PASSWORD" \
+    local creds
+    if [[ -n "${NOTARY_PROFILE:-}" ]]; then
+        creds=(--keychain-profile "$NOTARY_PROFILE")
+    else
+        creds=(--apple-id "$APPLE_ID" --team-id "$TEAM_ID" --password "$APP_SPECIFIC_PASSWORD")
+    fi
+
+    xcrun notarytool submit "$DMG_PATH" "${creds[@]}" \
         --wait \
         --timeout 30m \
         2>&1 | tee "$log_file"
@@ -388,10 +415,7 @@ notarize_dmg() {
         sub_id=$(grep -oE "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}" "$log_file" | sed -n '1p' || true)
         if [[ -n "$sub_id" ]]; then
             info "Submission ID: $sub_id"
-            xcrun notarytool log "$sub_id" \
-                --apple-id "$APPLE_ID" \
-                --team-id "$TEAM_ID" \
-                --password "$APP_SPECIFIC_PASSWORD" \
+            xcrun notarytool log "$sub_id" "${creds[@]}" \
                 "$BUILD_DIR/notarization-detail.json" 2>/dev/null || true
 
             if [[ -f "$BUILD_DIR/notarization-detail.json" ]]; then

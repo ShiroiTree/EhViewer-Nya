@@ -25,6 +25,25 @@ import EhSettings
 import UIKit
 #endif
 
+// MARK: - token 显示名
+
+/// token 上的显示名。完整值仍留在 term 里。
+///
+/// 优先用中文翻译——那是用户在建议列表里认出来并点下去的那个词。
+/// 没有翻译时保留命名空间：`f:machine` 与手打的 `machine` 不应长得一样。
+func ehSearchTermDisplayName(_ term: SearchTerm) -> String {
+    switch term.kind {
+    case .uploader:
+        return "上传者 · \(term.bareText)"
+    case .tag, .keyword:
+        let bare = term.bareText
+        if let zh = EhTagDatabase.shared.getTranslation(bare), zh != bare {
+            return zh
+        }
+        return bare
+    }
+}
+
 // MARK: - 搜索框
 
 struct EhSearchBar: View {
@@ -66,12 +85,40 @@ struct EhSearchBar: View {
                 )
                 .frame(height: 24)
                 #else
-                TextField(placeholder, text: $text)
-                    .textFieldStyle(.plain)
-                    .focused($macFocus)
-                    .onSubmit(onSubmit)
-                    .onChange(of: macFocus) { _, v in isFocused = v }
-                    .onChange(of: isFocused) { _, v in macFocus = v }
+                // macOS 没有 UISearchTextField：这里自己渲染 token 胶囊 + 输入框，
+                // 否则「当前搜索条件」看不见，也没法逐个删除。
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(Array(tokens.enumerated()), id: \.offset) { index, term in
+                            HStack(spacing: 4) {
+                                Text(ehSearchTermDisplayName(term))
+                                    .font(EhFont.caption)
+                                    .foregroundStyle(EhColor.label)
+                                    .lineLimit(1)
+                                Button {
+                                    tokens.remove(at: index)
+                                } label: {
+                                    Image(systemName: "xmark")
+                                        .font(.system(size: 9, weight: .bold))
+                                        .foregroundStyle(EhColor.secondaryLabel)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background { Capsule().fill(EhColor.fill) }
+                        }
+
+                        TextField(placeholder, text: $text)
+                            .textFieldStyle(.plain)
+                            .focused($macFocus)
+                            .onSubmit(onSubmit)
+                            .onChange(of: macFocus) { _, v in isFocused = v }
+                            .onChange(of: isFocused) { _, v in macFocus = v }
+                            .frame(minWidth: 90)
+                    }
+                }
+                .frame(height: 24)
                 #endif
 
                 if !text.isEmpty || !tokens.isEmpty {
@@ -191,7 +238,7 @@ struct EhTokenSearchField: UIViewRepresentable {
         let current = field.tokens.compactMap { $0.representedObject as? SearchTerm }
         if current != tokens {
             field.tokens = tokens.map { term in
-                let token = UISearchToken(icon: nil, text: Self.displayName(for: term))
+                let token = UISearchToken(icon: nil, text: ehSearchTermDisplayName(term))
                 token.representedObject = term
                 return token
             }
@@ -205,25 +252,6 @@ struct EhTokenSearchField: UIViewRepresentable {
     }
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
-
-    /// token 上的显示名。完整值仍留在 representedObject 里。
-    ///
-    /// 优先用中文翻译——那是用户在建议列表里认出来并点下去的那个词。
-    /// 没有翻译时保留命名空间：此前剥掉了命名空间，`f:machine` 与手打的
-    /// `machine` 都显示成「machine」，两枚 token 长得一模一样，
-    /// 看起来就像同一个标签加了两遍。
-    private static func displayName(for term: SearchTerm) -> String {
-        switch term.kind {
-        case .uploader:
-            return "上传者 · \(term.bareText)"
-        case .tag, .keyword:
-            let bare = term.bareText
-            if let zh = EhTagDatabase.shared.getTranslation(bare), zh != bare {
-                return zh
-            }
-            return bare
-        }
-    }
 
     final class Coordinator: NSObject, UITextFieldDelegate {
         var parent: EhTokenSearchField

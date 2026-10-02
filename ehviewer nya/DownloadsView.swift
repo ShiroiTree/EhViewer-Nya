@@ -363,7 +363,10 @@ struct DownloadsView: View {
             }
         }
         .frame(height: EhSize.tabBarHeight)
-        .ehGlass(cornerRadius: EhSize.tabBarRadius)
+        .ehLiquidGlass(
+            in: RoundedRectangle(cornerRadius: EhSize.tabBarRadius, style: .continuous),
+            interactive: true
+        )
         .padding(.horizontal, EhSize.tabBarSideInset)
         .padding(.bottom, EhSize.tabBarBottomInset)
     }
@@ -857,7 +860,7 @@ struct DownloadsView: View {
                     Text("正在打包…").font(.footnote).foregroundStyle(.secondary)
                 }
                 .padding(20)
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                .glassEffect(.regular, in: RoundedRectangle(cornerRadius: EhRadius.control, style: .continuous))
             }
         }
         .alert("分享失败", isPresented: Binding(
