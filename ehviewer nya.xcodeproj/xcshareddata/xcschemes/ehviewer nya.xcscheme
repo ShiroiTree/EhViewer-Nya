@@ -40,6 +40,16 @@
                ReferencedContainer = "container:ehviewer nya.xcodeproj">
             </BuildableReference>
          </TestableReference>
+         <TestableReference
+            skipped = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "DC4A07822F3DA21800717C38"
+               BuildableName = "ehviewer nyaUITests.xctest"
+               BlueprintName = "ehviewer nyaUITests"
+               ReferencedContainer = "container:ehviewer nya.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
       </Testables>
    </TestAction>
    <LaunchAction

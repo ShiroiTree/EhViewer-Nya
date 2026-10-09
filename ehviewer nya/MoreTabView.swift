@@ -31,19 +31,8 @@ struct MoreTabView: View {
             .navigationDestination(for: MainTabView.Tab.self) { tab in
                 morePageContent(tab)
             }
-            // ★ 画廊列表中的 NavigationLink(value: GalleryInfo) 需要此 destination
-            .navigationDestination(for: GalleryInfo.self) { gallery in
-                GalleryDetailView(gallery: gallery)
-                    .id(gallery.gid)
-            }
-            // ★ 画廊详情中点击标签的 NavigationLink(value: TagSearchDestination) 需要此 destination
-            .navigationDestination(for: TagSearchDestination.self) { dest in
-                GalleryListView(mode: .tag(keyword: dest.tag), isPushed: true)
-            }
-            // ★ 画廊详情中点击上传者的 NavigationLink(value: GalleryQueryDestination) 需要此 destination
-            .navigationDestination(for: GalleryQueryDestination.self) { dest in
-                GalleryListView(mode: .search(dest.query), isPushed: true)
-            }
+            // 详情 / 标签列表 / 上传者查询的统一落点
+            .ehGalleryDestinations(.pushed)
         }
     }
 

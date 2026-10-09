@@ -33,11 +33,10 @@ struct HistoryView: View {
                 historyInnerContent
             } else {
                 NavigationStack {
+                    // 之前这里只注册了 GalleryInfo，详情页里点标签/上传者
+                    // 发出的 AppRoute 没有落点，于是从历史进详情标签点不动。
                     historyInnerContent
-                        .navigationDestination(for: GalleryInfo.self) { gallery in
-                            GalleryDetailView(gallery: gallery)
-                                .id(gallery.gid)
-                        }
+                        .ehGalleryDestinations(.pushed)
                 }
             }
         }

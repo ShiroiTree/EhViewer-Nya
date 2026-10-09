@@ -256,6 +256,7 @@ struct MainTabView: View {
                             Button("关闭") { clipboardGallery = nil }
                         }
                     }
+                    .ehGalleryDestinations(.pushed)
             }
         }
         .onChange(of: horizontalSizeClass) { _, newSizeClass in
@@ -277,20 +278,9 @@ struct MainTabView: View {
     private var galleryListColumn: some View {
         NavigationStack(path: $contentPath) {
             macOSContentView(for: selectedTab)
-                // 历史页的列表用它推入画廊详情。画廊列表页走的是选中绑定，
-                // 不产生这种取值式跳转，两者互不干扰。
-                .navigationDestination(for: GalleryInfo.self) { gallery in
-                    GalleryDetailView(gallery: gallery)
-                        .id(gallery.gid)
-                }
-                .navigationDestination(for: TagSearchDestination.self) { dest in
-                    // 标签点击推入的画廊列表 (对齐 Android: onTagClick → GalleryListScene)
-                    GalleryListView(mode: .tag(keyword: dest.tag), selection: selection)
-                }
-                .navigationDestination(for: GalleryQueryDestination.self) { dest in
-                    // 上传者等查询推入的画廊列表
-                    GalleryListView(mode: .search(dest.query), selection: selection)
-                }
+                // 历史页的列表用它推入画廊详情；标签/上传者推入的列表嵌入本栈，
+                // 行驱动右侧详情。画廊列表页走的是选中绑定，不产生取值式跳转。
+                .ehGalleryDestinations(.embedded(selection))
         }
         .id(selectedTab)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -307,13 +297,11 @@ struct MainTabView: View {
                 .background(.background)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .environment(\.tagNavigationAction, TagNavigationAction { tag in
+        // 详情列点标签/上传者 → 推入列表列栈（详情列与列表列是两个独立栈）。
+        // 窄窗下先撤回详情，否则详情会盖住刚推入的列表。
+        .environment(\.galleryNavigationAction, GalleryNavigationAction { route in
             if isCompact { closeDetail() }
-            contentPath.append(TagSearchDestination(tag: tag))
-        })
-        .environment(\.searchNavigationAction, SearchNavigationAction { query in
-            if isCompact { closeDetail() }
-            contentPath.append(GalleryQueryDestination(query: query))
+            contentPath.append(route)
         })
     }
 

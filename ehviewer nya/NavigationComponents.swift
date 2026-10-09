@@ -9,6 +9,7 @@
 //
 
 import SwiftUI
+import EhModels
 
 #if os(iOS)
 import UIKit
@@ -153,5 +154,84 @@ extension View {
         #else
         self
         #endif
+    }
+}
+
+// MARK: - 4. 画廊导航路由 (统一收口)
+
+/// 全 App 统一的路由值。
+///
+/// 此前标签与上传者各是一个 Hashable 目标类型（`TagSearchDestination` /
+/// `GalleryQueryDestination`），承载页得为「每一种」分别注册 `navigationDestination`。
+/// 漏注册一处，那条路径上的标签/上传者就静默失效（历史页即如此）；注册重了又会
+/// 触发 SwiftUI 的未定义行为。收口成单一枚举后，每个栈只注册一种类型，
+/// 由 `.ehGalleryDestinations(_:)` 一次挂载。
+enum AppRoute: Hashable {
+    case tagList(String)
+    case queryList(SearchQuery)
+}
+
+/// 画廊列表在各栈里的呈现差异 —— 这是唯一允许影响列表形态的开关。
+///
+/// 变体来自物理约束（独立栈 vs 分栏内容列），不是入口差异：
+/// 同一个数据源在任何入口都取同一个变体。
+enum GalleryListPresentation {
+    /// 独立栈 / compact / 分栏侧栏：自己画搜索栏与标题。
+    case pushed
+    /// 嵌入分栏内容列：行驱动右侧详情，不自己建栈。
+    case embedded(Binding<GalleryInfo?>)
+
+    @ViewBuilder
+    func makeList(_ mode: GalleryListView.ListMode) -> some View {
+        switch self {
+        case .pushed:
+            GalleryListView(mode: mode, isPushed: true)
+        case .embedded(let selection):
+            GalleryListView(mode: mode, selection: selection)
+        }
+    }
+}
+
+/// 跨列导航动作 —— macOS 分栏里「详情列点标签 → 推入内容列」。
+///
+/// 详情列与内容列是两个独立的 NavigationStack，value-based 链接只能在同一栈内
+/// 解析，跨列必须由外部注入一个动作，把路由 append 到内容列自己的 path 上。
+/// 标签与上传者共用这一个动作（此前是两个各管一半）。
+struct GalleryNavigationAction {
+    let push: (AppRoute) -> Void
+}
+
+private struct GalleryNavigationActionKey: EnvironmentKey {
+    static let defaultValue: GalleryNavigationAction? = nil
+}
+
+extension EnvironmentValues {
+    var galleryNavigationAction: GalleryNavigationAction? {
+        get { self[GalleryNavigationActionKey.self] }
+        set { self[GalleryNavigationActionKey.self] = newValue }
+    }
+}
+
+extension View {
+    /// 每个承载画廊页面的 NavigationStack 根挂一次。
+    ///
+    /// 集中注册两类目标：
+    ///   - `GalleryInfo` → 画廊详情（列表行的 `NavigationLink(value:)`）
+    ///   - `AppRoute`    → 标签 / 上传者列表（详情页内发出）
+    ///
+    /// 类型可穷举，因此不存在「漏注册一种」或「重复注册一类」。
+    func ehGalleryDestinations(_ presentation: GalleryListPresentation = .pushed) -> some View {
+        self
+            .navigationDestination(for: GalleryInfo.self) { gallery in
+                GalleryDetailView(gallery: gallery).id(gallery.gid)
+            }
+            .navigationDestination(for: AppRoute.self) { route in
+                switch route {
+                case .tagList(let tag):
+                    presentation.makeList(.tag(keyword: tag))
+                case .queryList(let query):
+                    presentation.makeList(.search(query))
+                }
+            }
     }
 }

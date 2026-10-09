@@ -12,49 +12,10 @@ import EhAPI
 import EhSettings
 import EhDatabase
 
-// MARK: - 标签导航支持 (对齐 Android: onTagClick → 推入新画廊列表到左侧导航栈)
+// MARK: - 标签/上传者导航
 
-/// 标签搜索导航目标 — 用于 NavigationStack 的 path
-struct TagSearchDestination: Hashable {
-    let tag: String
-}
-
-/// 标签导航动作 — 从 Detail 列传递到 Content/Sidebar 列的 NavigationStack
-struct TagNavigationAction {
-    let navigate: (String) -> Void
-}
-
-private struct TagNavigationActionKey: EnvironmentKey {
-    static let defaultValue: TagNavigationAction? = nil
-}
-
-extension EnvironmentValues {
-    var tagNavigationAction: TagNavigationAction? {
-        get { self[TagNavigationActionKey.self] }
-        set { self[TagNavigationActionKey.self] = newValue }
-    }
-}
-
-/// 通用查询导航目标（上传者搜索等）— 用于 NavigationStack 的 path
-struct GalleryQueryDestination: Hashable {
-    let query: SearchQuery
-}
-
-/// 查询导航动作 — 从 Detail 列传递到 Content/Sidebar 列的 NavigationStack
-struct SearchNavigationAction {
-    let navigate: (SearchQuery) -> Void
-}
-
-private struct SearchNavigationActionKey: EnvironmentKey {
-    static let defaultValue: SearchNavigationAction? = nil
-}
-
-extension EnvironmentValues {
-    var searchNavigationAction: SearchNavigationAction? {
-        get { self[SearchNavigationActionKey.self] }
-        set { self[SearchNavigationActionKey.self] = newValue }
-    }
-}
+// 路由值 (AppRoute) 与跨列导航动作 (GalleryNavigationAction) 统一在
+// NavigationComponents.swift 定义，详情页只消费。
 
 struct GalleryDetailView: View {
     let gallery: GalleryInfo
@@ -70,10 +31,8 @@ struct GalleryDetailView: View {
     @State private var showTorrents = false
     @State private var showCellularWarning = false
 
-    /// 标签点击导航动作 — 在 Split/三栏布局中将标签列表推入左侧栏
-    @Environment(\.tagNavigationAction) private var tagNavigationAction
-    /// 上传者点击导航动作 — 同上，推入左侧栏
-    @Environment(\.searchNavigationAction) private var searchNavigationAction
+    /// 跨列导航动作 — 分栏布局里把标签/上传者列表推入列表列（注入时才存在）。
+    @Environment(\.galleryNavigationAction) private var navAction
     @Environment(\.dismiss) private var dismiss
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -629,23 +588,24 @@ struct GalleryDetailView: View {
         .padding(.bottom, 12)
     }
 
-    /// 标签按钮 — Split/三栏布局: 推入左侧导航栈; iPhone compact: NavigationLink 推入当前栈
+    /// 标签按钮 — 两条分支只在「路由落到哪个栈」上有别，链接值统一为 `AppRoute.tagList`，
+    /// 由承载栈的 `.ehGalleryDestinations()` 集中解析。
     @ViewBuilder
     private func tagButton(label: String, fullTag: String) -> some View {
         Group {
-            if let tagNav = tagNavigationAction {
-                // iPad/macOS Split 布局: 用 Button 推入左侧 content/sidebar 列的 NavigationStack
+            if let navAction {
+                // 分栏布局：注入的动作把它推入列表列自己的导航栈
                 Button {
-                    tagNav.navigate(fullTag)
+                    navAction.push(.tagList(fullTag))
                 } label: {
                     tagLabel(label)
                 }
                 .buttonStyle(.plain)
             } else {
-                // iPhone compact: value-based NavigationLink 推入同一 NavigationStack
-                // ★ 必须使用 value-based 而非 destination-based，避免与 galleryList 的
-                //   NavigationLink(value: GalleryInfo) 混用导致路径混乱
-                NavigationLink(value: TagSearchDestination(tag: fullTag)) {
+                // 其余入口：value-based 链接推入当前栈
+                // ★ value-based（而非 destination-based），与 galleryList 的
+                //   NavigationLink(value: GalleryInfo) 同属一套，避免路径混乱
+                NavigationLink(value: AppRoute.tagList(fullTag)) {
                     tagLabel(label)
                 }
                 .buttonStyle(.plain)
@@ -689,15 +649,15 @@ struct GalleryDetailView: View {
     private func uploaderButton(_ uploader: String) -> some View {
         let query = SearchQuery(terms: [.makeUploader(uploader)])
         Group {
-            if let searchNav = searchNavigationAction {
+            if let navAction {
                 Button {
-                    searchNav.navigate(query)
+                    navAction.push(.queryList(query))
                 } label: {
                     uploaderLabel(uploader)
                 }
                 .buttonStyle(.plain)
             } else {
-                NavigationLink(value: GalleryQueryDestination(query: query)) {
+                NavigationLink(value: AppRoute.queryList(query)) {
                     uploaderLabel(uploader)
                 }
                 .buttonStyle(.plain)

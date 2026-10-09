@@ -124,6 +124,8 @@ struct FavoritesView: View {
                 }
                 .ehPageSearch(isActive: $isSearching, text: $searchText, placeholder: "搜索收藏")
                 .ehCompactHeader()
+                // 画廊详情 + 标签/上传者列表（此前这个栈一个 destination 都没注册）
+                .ehGalleryDestinations(.pushed)
                 // 去掉 .searchable：iOS 26 把搜索栏放在屏幕底部，与浮起导航条重叠。
                 // 设计稿这一屏顶部只有标题与过滤胶囊，检索由胶囊承担。
                 .onChange(of: searchText) { _, _ in

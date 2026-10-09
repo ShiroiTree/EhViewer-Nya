@@ -61,9 +61,8 @@ struct ProfileHomeView: View {
                     .ehHidesTabBar()
                     #endif
             }
-            .navigationDestination(for: GalleryInfo.self) { gallery in
-                GalleryDetailView(gallery: gallery).id(gallery.gid)
-            }
+            // 画廊详情 + 标签/上传者列表（此前只注册了详情，详情页标签点不动）
+            .ehGalleryDestinations(.pushed)
             .sheet(isPresented: $showLogin) {
                 LoginView()
                     .environment(appState)

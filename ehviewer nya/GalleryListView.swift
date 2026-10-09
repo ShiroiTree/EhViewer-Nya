@@ -205,14 +205,8 @@ struct GalleryListView: View {
                 NavigationStack(path: $sidebarPath) {
                     sidebarContent
                         .navigationTitle(navigationTitle)
-                        .navigationDestination(for: TagSearchDestination.self) { dest in
-                            // 标签点击推入的画廊列表 (对齐 Android: onTagClick → 叠加新列表)
-                            GalleryListView(mode: .tag(keyword: dest.tag), selection: $selectedGallery)
-                        }
-                        .navigationDestination(for: GalleryQueryDestination.self) { dest in
-                            // 上传者等查询推入的画廊列表
-                            GalleryListView(mode: .search(dest.query), selection: $selectedGallery)
-                        }
+                        // 侧栏里标签/上传者推入的列表同样嵌入本栈，行驱动右侧详情
+                        .ehGalleryDestinations(.embedded($selectedGallery))
                 }
                 .navigationSplitViewColumnWidth(min: 350, ideal: 400, max: 500)
             } detail: {
@@ -225,11 +219,9 @@ struct GalleryListView: View {
                         ContentUnavailableView("选择画廊", systemImage: "photo.stack", description: Text("从左侧列表选择一个画廊"))
                     }
                 }
-                .environment(\.tagNavigationAction, TagNavigationAction { tag in
-                    sidebarPath.append(TagSearchDestination(tag: tag))
-                })
-                .environment(\.searchNavigationAction, SearchNavigationAction { query in
-                    sidebarPath.append(GalleryQueryDestination(query: query))
+                // 详情列点标签/上传者 → 推入侧栏栈（详情列与侧栏是两个独立栈）
+                .environment(\.galleryNavigationAction, GalleryNavigationAction { route in
+                    sidebarPath.append(route)
                 })
             }
         } else {
@@ -350,19 +342,8 @@ struct GalleryListView: View {
                     }
                 }
             }
-            // ★ navigationDestination 只在 NavigationStack 顶层注册一次，避免 pushedContent 重复注册导致未定义行为
-            .navigationDestination(for: GalleryInfo.self) { gallery in
-                GalleryDetailView(gallery: gallery)
-                    .id(gallery.gid)
-            }
-            // 标签点击推入的画廊列表 (对齐 Android: onTagClick → 叠加新列表)
-            .navigationDestination(for: TagSearchDestination.self) { dest in
-                GalleryListView(mode: .tag(keyword: dest.tag), isPushed: true)
-            }
-            // 上传者等查询推入的画廊列表
-            .navigationDestination(for: GalleryQueryDestination.self) { dest in
-                GalleryListView(mode: .search(dest.query), isPushed: true)
-            }
+            // 详情 / 标签列表 / 上传者查询的落点集中在此注册
+            .ehGalleryDestinations(.pushed)
             .navigationTitle(navigationTitle)
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
