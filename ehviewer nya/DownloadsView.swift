@@ -882,18 +882,11 @@ struct DownloadsView: View {
             }
             #endif
         }
-        #if os(iOS)
-        .fullScreenCover(item: $readerGallery) { gallery in
+        // 阅读器呈现：iOS 全屏 cover，macOS 推入导航栈（与详情页一致）
+        .ehReaderPresentation(item: $readerGallery) { gallery in
             ImageReaderView(gid: gallery.gid, token: gallery.token, pages: gallery.pages)
                 .id(gallery.gid)
         }
-        #else
-        .sheet(item: $readerGallery) { gallery in
-            ImageReaderView(gid: gallery.gid, token: gallery.token, pages: gallery.pages)
-                .id(gallery.gid)
-                .frame(minWidth: 800, minHeight: 600)
-        }
-        #endif
     }
 
     // MARK: - 批量移动标签 Sheet

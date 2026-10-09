@@ -115,8 +115,8 @@ struct GalleryPreviewsView: View {
             }
         }
         }
-        #if os(iOS)
-        .fullScreenCover(item: $readerTarget) { target in
+        // 阅读器呈现：iOS 全屏 cover，macOS 推入导航栈（与详情页一致）
+        .ehReaderPresentation(item: $readerTarget) { target in
             ImageReaderView(
                 gid: gid,
                 token: token,
@@ -126,19 +126,6 @@ struct GalleryPreviewsView: View {
             )
             .id(gid)
         }
-        #else
-        .sheet(item: $readerTarget) { target in
-            ImageReaderView(
-                gid: gid,
-                token: token,
-                pages: galleryPages,
-                previewSet: initialPreviewSet,
-                initialPage: target.page
-            )
-            .id(gid)
-            .frame(minWidth: 800, minHeight: 600)
-        }
-        #endif
     }
     
     // MARK: - 预览项 (点击跳转到阅读器，对齐 Android GalleryPreviewsScene.onItemClick)

@@ -27,16 +27,16 @@ struct ContinueReadingCard: View {
         // 原 .onAppear 在主线程同步调用 dbQueue.read → 如果后台 VACUUM 持有 dbQueue，
         // 主线程永久阻塞 → .task 永远无法执行 → 白屏 + 发热 + 闪退
         .task { await loadLatestReadingAsync() }
-        #if os(iOS)
-        .fullScreenCover(item: $readerLaunchItem) { item in
+        // 阅读器呈现：iOS 全屏 cover，macOS 推入导航栈（此前 macOS 无入口）
+        .ehReaderPresentation(item: $readerLaunchItem) { item in
             ImageReaderView(
                 gid: item.gid,
                 token: item.token,
                 pages: item.pages,
                 initialPage: item.initialPage
             )
+            .id(item.id)
         }
-        #endif
     }
 
     /// 只在最近 24 小时内有阅读记录时显示

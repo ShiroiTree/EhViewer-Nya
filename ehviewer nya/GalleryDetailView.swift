@@ -99,10 +99,10 @@ struct GalleryDetailView: View {
         }
         .enableEdgeSwipeBack()
         #endif
-        #if os(iOS)
-        .fullScreenCover(item: $vm.readerLaunchItem) { item in
-            // 全屏呈现阅读器，完全隐藏导航栏
-            // item: 绑定保证每次打开都创建全新 ImageReaderView + ReaderViewModel
+        // 阅读器呈现：iOS 全屏 cover，macOS 推入导航栈（与其它入口一致）
+        .ehReaderPresentation(
+            item: Binding(get: { vm.readerLaunchItem }, set: { vm.readerLaunchItem = $0 })
+        ) { item in
             ImageReaderView(
                 gid: item.gid,
                 token: item.token,
@@ -110,25 +110,8 @@ struct GalleryDetailView: View {
                 previewSet: item.previewSet,
                 initialPage: item.initialPage
             )
+            .id(item.id) // 保证每次 launch 创建新视图
         }
-        #else
-        .navigationDestination(isPresented: Binding(
-            get: { vm.readerLaunchItem != nil },
-            set: { if !$0 { vm.readerLaunchItem = nil } }
-        )) {
-            // macOS: 在导航栈中推入阅读器，支持窗口自由调整大小
-            if let item = vm.readerLaunchItem {
-                ImageReaderView(
-                    gid: item.gid,
-                    token: item.token,
-                    pages: item.pages,
-                    previewSet: item.previewSet,
-                    initialPage: item.initialPage
-                )
-                .id(item.id) // 保证每次 launch 创建新视图
-            }
-        }
-        #endif
         .task(id: gallery.gid) {
             // 画廊 ID 变更时重置 VM 状态并重新加载 (修复 SwiftUI 视图复用 bug)
             vm.reset()

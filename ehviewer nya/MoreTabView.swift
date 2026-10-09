@@ -12,6 +12,8 @@ import EhSettings
 
 struct MoreTabView: View {
     let onNavigate: (MainTabView.Tab) -> Void
+    /// 排行榜周期（toplist.php 的 tl）。此前这里写死 15，页头没有周期条可选。
+    @State private var toplistPeriod = 15
 
     var body: some View {
         NavigationStack {
@@ -42,7 +44,8 @@ struct MoreTabView: View {
         case .popular:
             GalleryListView(mode: .popular, isPushed: true)
         case .toplist:
-            GalleryListView(mode: .toplist(period: 15), isPushed: true)
+            GalleryListView(mode: .toplist(period: toplistPeriod), isPushed: true,
+                            toplistPeriod: $toplistPeriod)
         case .history:
             HistoryView(isPushed: true)
         case .settings:

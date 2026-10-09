@@ -12,6 +12,8 @@ import EhSettings
 struct MainTabView: View {
     @Environment(AppState.self) private var appState
     @State private var selectedTab: Tab = Tab.fromLaunchPage(AppSettings.shared.launchPage)
+    /// 排行榜周期（toplist.php 的 tl）。侧栏/单栏进排行时页头据此出周期条。
+    @State private var toplistPeriod = 15
     /// 剪贴板打开画廊 (iOS sheet 展示)
     @State private var clipboardGallery: GalleryInfo?
     #if os(iOS)
@@ -377,7 +379,8 @@ struct MainTabView: View {
         case .popular:
             GalleryListView(mode: .popular, selection: selection)
         case .toplist:
-            GalleryListView(mode: .toplist(period: 15), selection: selection)
+            GalleryListView(mode: .toplist(period: toplistPeriod), selection: selection,
+                            toplistPeriod: $toplistPeriod)
         case .favorites:
             FavoritesView(selection: selection)
         case .downloads:
@@ -439,7 +442,7 @@ struct MainTabView: View {
         case .popular:
             GalleryListView(mode: .popular)
         case .toplist:
-            GalleryListView(mode: .toplist(period: 15))
+            GalleryListView(mode: .toplist(period: toplistPeriod), toplistPeriod: $toplistPeriod)
         case .favorites:
             FavoritesView()
         case .downloads:

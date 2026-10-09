@@ -58,15 +58,21 @@ final class TagNavigationUITests: XCTestCase {
 
     // MARK: - Helpers
 
-    /// 详情页标签区的常见标签文字，用来定位一个可点的 chip
+    /// 定位详情页里的一个标签 chip。
+    ///
+    /// 标签 chip 是 `Button`；而「原作 / 角色 / 女性」这些是分类名，是 `StaticText`。
+    /// 早先按固定文字匹配会点到分类名（点它不跳转），故改为：在「标签」区标题
+    /// 下方，取第一个不是操作按钮的 Button。
     @MainActor
     private func firstTagChip(in app: XCUIApplication) -> XCUIElement? {
-        let candidates = ["阿黑颜", "中出", "无修正", "AI生成", "女性", "原作", "单女主"]
-        for c in candidates {
-            let b = app.buttons[c]
-            if b.exists { return b }
-            let t = app.staticTexts[c]
-            if t.exists { return t }
+        let actionLabels: Set<String> = ["阅读", "喜欢", "归档", "下载", "箭头向下圆圈", "书签", "评论"]
+        let header = app.staticTexts["标签"].firstMatch
+        let upperBoundY = header.exists ? header.frame.minY : 0
+        for b in app.buttons.allElementsBoundByIndex {
+            guard !actionLabels.contains(b.label), !b.label.isEmpty else { continue }
+            if upperBoundY == 0 || b.frame.minY >= upperBoundY {
+                return b
+            }
         }
         return nil
     }

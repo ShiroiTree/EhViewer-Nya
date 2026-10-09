@@ -2233,3 +2233,32 @@ struct ReaderPageGrid: View {
         #endif
     }
 }
+
+// MARK: - 统一的阅读器呈现方式
+
+extension View {
+    /// 把阅读器以统一方式呈现。
+    ///
+    /// - iOS：全屏 cover（完全隐藏导航栏）。
+    /// - macOS：推入导航栈 —— 与详情页一致，窗口工具栏 inset、背景、可自由
+    ///   缩放都随之统一。此前下载页/预览页用 `sheet` + 固定 `minWidth/minHeight`
+    ///   呈现，于是同一个阅读器在不同入口的样式与顶栏让位都不一致。
+    ///
+    /// 调用方的 `reader` 闭包负责构造 `ImageReaderView`（含 `.id`）。
+    @ViewBuilder
+    func ehReaderPresentation<Item: Identifiable, Content: View>(
+        item: Binding<Item?>,
+        @ViewBuilder reader: @escaping (Item) -> Content
+    ) -> some View {
+        #if os(iOS)
+        self.fullScreenCover(item: item) { reader($0) }
+        #else
+        self.navigationDestination(isPresented: Binding(
+            get: { item.wrappedValue != nil },
+            set: { if !$0 { item.wrappedValue = nil } }
+        )) {
+            if let value = item.wrappedValue { reader(value) }
+        }
+        #endif
+    }
+}

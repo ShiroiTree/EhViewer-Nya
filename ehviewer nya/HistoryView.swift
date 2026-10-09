@@ -110,6 +110,17 @@ struct HistoryView: View {
                     vm.clearAll()
                 }
             }
+            // 阅读器呈现。挂在页头这一层（而不是 List 内部）——macOS 走
+            // navigationDestination，放在 lazy 容器里注册不可靠。此前这段是
+            // `#if os(iOS)`，于是 macOS 上「续读」播放键点了没反应。
+            .ehReaderPresentation(item: $resumeItem) { item in
+                ImageReaderView(
+                    gid: item.gid, token: item.token,
+                    pages: item.pages, previewSet: item.previewSet,
+                    initialPage: item.initialPage
+                )
+                .id(item.id)
+            }
     }
 
     private var filteredRecords: [HistoryRecord] {
@@ -172,12 +183,6 @@ struct HistoryView: View {
         }
         #if os(iOS)
         .ehTabBarAutoHide()
-        .fullScreenCover(item: $resumeItem) { item in
-            ImageReaderView(
-                gid: item.gid, token: item.token,
-                pages: item.pages, initialPage: item.initialPage
-            )
-        }
         #endif
     }
 
