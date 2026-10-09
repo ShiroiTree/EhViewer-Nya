@@ -86,6 +86,9 @@ struct GalleryListView: View {
     /// 用户点开过的那几本，靠它去解析会静默跳过绝大多数选中项。
     private var visibleGalleries: Binding<[GalleryInfo]>?
 
+    /// 当前是否处于多选。侧栏列表据此在「行驱动详情」与「行切换勾选」之间切换。
+    private var isMultiSelecting: Bool { selectionBindings?.isSelecting.wrappedValue ?? false }
+
     /// 顶部横向切页的选中项。非 nil 时在搜索栏下方渲染「首页/订阅/热门/排行」切页条。
     /// 只有作为浏览容器的根列表才传入；标签列表、搜索结果等推入的列表不显示切页条。
     private var browseSource: Binding<BrowseSource>?
@@ -163,12 +166,21 @@ struct GalleryListView: View {
 
     /// 收藏搜索模式 (嵌入)
     init(mode: ListMode, selection: Binding<GalleryInfo?>, searchKeyword: String?,
-         hidesOwnSearchBar: Bool = false, hidesEmptyState: Bool = false) {
+         hidesOwnSearchBar: Bool = false, hidesEmptyState: Bool = false,
+         isSelecting: Binding<Bool>? = nil,
+         selectedGids: Binding<Set<Int64>>? = nil,
+         visibleGalleries: Binding<[GalleryInfo]>? = nil) {
         self.mode = mode
         self.externalSelection = selection
         self.favSearchKeyword = searchKeyword
         self.hidesOwnSearchBar = hidesOwnSearchBar
         self.hidesEmptyState = hidesEmptyState
+        self.visibleGalleries = visibleGalleries
+        // 云端收藏夹的多选（批量下载 / 移出 / 换收藏夹）此前只在 iOS 分支接上，
+        // 嵌入的 macOS 收藏页没有绑定，菜单点了也不会有选中项。
+        if let isSelecting, let selectedGids {
+            self.selectionBindings = (isSelecting, selectedGids)
+        }
     }
 
     /// 排行榜的周期可能来自可改的 `toplistPeriod` 绑定，以绑定值为准；
@@ -599,14 +611,18 @@ struct GalleryListView: View {
                     errorView
                 }
             } else {
-                List(selection: selectionBinding) {
+                List(selection: isMultiSelecting ? nil : selectionBinding) {
                         // 顶部空白占位：给浮起的搜索胶囊让位，避免初始遮住第一条。
                         // 再加上工具栏高度——内容现在铺到了工具栏下方。
-                        Color.clear
-                            .frame(height: EhSize.macTopContentClearance + toolbarTopInset)
-                            .listRowInsets(EdgeInsets())
-                            .listRowSeparator(.hidden)
-                            .listRowBackground(Color.clear)
+                        // 收藏页（hidesOwnSearchBar）没有浮起胶囊，且收藏夹胶囊行已经
+                        // 在页里让开了工具栏，再留这段会在胶囊与列表之间撑出一大块空白。
+                        if !hidesOwnSearchBar {
+                            Color.clear
+                                .frame(height: EhSize.macTopContentClearance + toolbarTopInset)
+                                .listRowInsets(EdgeInsets())
+                                .listRowSeparator(.hidden)
+                                .listRowBackground(Color.clear)
+                        }
 
                         // 内联加载指示器 (不阻塞界面)
                         if viewModel.isLoading && viewModel.galleries.isEmpty {
@@ -622,14 +638,41 @@ struct GalleryListView: View {
                         }
 
                         ForEach(viewModel.galleries, id: \.gid) { gallery in
-                            GalleryRow(
-                        gallery: gallery, showJpnTitle: showJpn, fixThumbUrl: fixThumb,
-                        onRequestDownload: requestDownload,
-                        onRequestFavorite: toggleFavorite,
-                        onTagTap: searchTag,
-                        highlightedTags: activeSearchTags
-                    )
-                                .tag(gallery)
+                            Group {
+                                // 多选中：整行点按切换勾选，不再驱动右侧详情
+                                // （与 GalleryContent 同款，否则收藏夹的批量操作在
+                                //  侧栏/嵌入列表里只会把行选进详情，勾不出任何东西）。
+                                if let selectionBindings, selectionBindings.isSelecting.wrappedValue {
+                                    let isSelected = selectionBindings.selected.wrappedValue.contains(gallery.gid)
+                                    HStack(spacing: 0) {
+                                        Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                                            .font(.system(size: 20))
+                                            .foregroundStyle(isSelected ? EhColor.accent : EhColor.tertiaryLabel)
+                                            .padding(.leading, EhSpacing.page)
+                                        GalleryRow(
+                                            gallery: gallery, showJpnTitle: showJpn, fixThumbUrl: fixThumb
+                                        )
+                                    }
+                                    .contentShape(Rectangle())
+                                    .onTapGesture {
+                                        Haptics.tap()
+                                        if isSelected {
+                                            selectionBindings.selected.wrappedValue.remove(gallery.gid)
+                                        } else {
+                                            selectionBindings.selected.wrappedValue.insert(gallery.gid)
+                                        }
+                                    }
+                                } else {
+                                    GalleryRow(
+                                        gallery: gallery, showJpnTitle: showJpn, fixThumbUrl: fixThumb,
+                                        onRequestDownload: requestDownload,
+                                        onRequestFavorite: toggleFavorite,
+                                        onTagTap: searchTag,
+                                        highlightedTags: activeSearchTags
+                                    )
+                                    .tag(gallery)
+                                }
+                            }
                         }
 
                         if viewModel.hasMore {

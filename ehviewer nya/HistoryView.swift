@@ -20,6 +20,10 @@ struct HistoryView: View {
     /// 待选收藏夹的画廊（没设默认收藏夹时）
     @State private var pendingFavorite: GalleryInfo?
 
+    /// 窗口工具栏高度（macOS 有值）。主体栏内容铺到工具栏下方，
+    /// 列表首行要让开这段空间，否则第一条记录被压在工具栏后面。
+    @Environment(\.ehToolbarTopInset) private var toolbarTopInset
+
     /// 被推入父导航栈时，不创建自己的 NavigationStack，避免嵌套
     private var isPushed: Bool = false
 
@@ -91,6 +95,10 @@ struct HistoryView: View {
             // 去掉 .searchable：iOS 26 把搜索栏放在屏幕**底部**，
             // 于是它和浮起导航条重叠，键盘弹出后也没有收起的落点。
             .ehPageSearch(isActive: $isSearching, text: $searchText, placeholder: "搜索历史")
+            // 整页让开窗口工具栏：主体栏铺在工具栏之下（见 MainTabView.macDetail），
+            // 不让位的话列表首行与展开的搜索栏都被压在工具栏后面。
+            // 加在 ehPageSearch 外侧，搜索栏才会跟列表一起下移。
+            .padding(.top, toolbarTopInset)
             .ehCompactHeader()
             #if os(macOS)
             .navigationTitle("阅读历史")

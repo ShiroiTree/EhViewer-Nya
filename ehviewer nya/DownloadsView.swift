@@ -62,6 +62,10 @@ struct DownloadsView: View {
     @State private var isSearching = false
     @State private var statusFilter: DownloadStatusFilter = .all
 
+    /// 窗口工具栏高度（macOS 有值）。主体栏内容铺到工具栏下方，
+    /// 页内的标签条要让开这段空间，否则整条被压在工具栏后面。
+    @Environment(\.ehToolbarTopInset) private var toolbarTopInset
+
     // MARK: - 批量操作
     @State private var isSelectMode = false
     @State private var selectedGids: Set<Int64> = []
@@ -141,6 +145,10 @@ struct DownloadsView: View {
             // 点放大镜才展开统一搜索框。此前用 .searchable，iOS 26 会把它
             // 渲染在屏幕底部，与浮起导航条重叠。
             .ehPageSearch(isActive: $isSearching, text: $searchText, placeholder: "搜索标题或标签")
+            // 整页让开窗口工具栏：主体栏铺在工具栏之下（见 MainTabView.macDetail），
+            // 不让位的话标签条与展开的搜索栏都被压在工具栏后面。
+            // 加在 ehPageSearch 外侧，搜索栏才会跟标签条一起下移。
+            .padding(.top, toolbarTopInset)
             // 批量移动标签 Sheet
             .sheet(isPresented: $showMoveLabelSheet) {
                 batchMoveLabelSheet

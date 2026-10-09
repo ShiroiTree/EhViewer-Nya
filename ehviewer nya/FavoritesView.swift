@@ -44,6 +44,10 @@ struct FavoritesView: View {
     @State private var showDeleteConfirm = false
     @State private var isBatchProcessing = false
 
+    /// 窗口工具栏高度（macOS 有值）。主体栏内容铺到工具栏下方，
+    /// 本页的页头动作在工具栏里，页内的收藏夹胶囊要让开这段空间。
+    @Environment(\.ehToolbarTopInset) private var toolbarTopInset
+
     /// 外部选择绑定（嵌入模式）
     private var externalSelection: Binding<GalleryInfo?>?
     private var isEmbedded: Bool { externalSelection != nil }
@@ -61,6 +65,32 @@ struct FavoritesView: View {
     }
 
     var body: some View {
+        pageContent
+            // 本地批量操作的呈现层挂在页面根部，而不是 `localBatchToolbar` 上：
+            // macOS 把菜单放进 `ToolbarItem` 后，挂在工具条项内部的 sheet/dialog
+            // 不一定会被呈现。放在这里两个平台都稳。
+            .sheet(isPresented: $showMoveSheet) {
+                FavoriteSlotPicker(
+                    onSelect: { slot in
+                        showMoveSheet = false
+                        guard slot >= 0 else { return }
+                        batchMoveToCloud(slot: slot)
+                    },
+                    onCancel: { showMoveSheet = false },
+                    showLocalOption: false
+                )
+                .presentationDetents([.medium])
+            }
+            .confirmationDialog(
+                "确认删除 \(selectedGids.count) 个收藏？",
+                isPresented: $showDeleteConfirm, titleVisibility: .visible
+            ) {
+                Button("删除", role: .destructive) { batchDeleteSelected() }
+            }
+    }
+
+    @ViewBuilder
+    private var pageContent: some View {
         if isEmbedded {
             VStack(spacing: 0) {
                 slotPicker
@@ -71,16 +101,52 @@ struct FavoritesView: View {
                     // "全部": 合并本地收藏 + 在线收藏 (对齐 Android: 全部包含所有来源)
                     allFavoritesContent(embedded: true)
                 } else {
-                    GalleryListView(mode: .favorites(slot: selectedSlot), selection: externalSelection!, searchKeyword: searchText.isEmpty ? nil : searchText, hidesOwnSearchBar: true)
-                        .id(selectedSlot)
+                    GalleryListView(
+                        mode: .favorites(slot: selectedSlot),
+                        selection: externalSelection!,
+                        searchKeyword: searchText.isEmpty ? nil : searchText,
+                        hidesOwnSearchBar: true,
+                        isSelecting: $isCloudSelecting,
+                        selectedGids: $cloudSelection,
+                        visibleGalleries: $cloudGalleries
+                    )
+                    .id(selectedSlot)
                 }
             }
             .navigationTitle("收藏")
+            // 同步状态挂在窗口标题下方（iOS 页头里的副标题搬到这儿）。
+            // 本地收藏没有云端同步，就不显示。
+            #if os(macOS)
+            .navigationSubtitle(Text(selectedSlot >= 0 ? syncStatusText : ""))
+            #endif
             .ehPageSearch(isActive: $isSearching, text: $searchText, placeholder: "搜索收藏")
                 // 去掉 .searchable：iOS 26 把搜索栏放在屏幕底部，与浮起导航条重叠。
                 // 设计稿这一屏顶部只有标题与过滤胶囊，检索由胶囊承担。
+            // 整页让开窗口工具栏：本页铺在工具栏之下（见 MainTabView.macDetail），
+            // 不让位的话收藏夹胶囊与搜索栏都被压在工具栏后面。
+            // 加在 ehPageSearch 外侧，展开的搜索栏才会跟胶囊一起下移。
+            .padding(.top, toolbarTopInset)
+            // 页头动作并入窗口工具栏（与下载、历史页一致），页内不再画一条页头。
+            .toolbar {
+                ToolbarItem(placement: .automatic) {
+                    EhSearchToggleButton(isActive: $isSearching)
+                }
+                if (selectedSlot == -2 || selectedSlot == -1) && !localFavorites.isEmpty {
+                    ToolbarItem(placement: .automatic) { localBatchToolbar }
+                }
+                if selectedSlot >= 0 {
+                    ToolbarItem(placement: .automatic) { cloudBatchToolbar }
+                }
+            }
             .onChange(of: searchText) { _, _ in
                 if selectedSlot == -2 || selectedSlot == -1 { loadLocalFavorites() }
+            }
+            .onChange(of: selectedSlot) { _, newValue in
+                // 记住这次看的是哪个收藏夹，下次进来直接到这里
+                AppSettings.shared.recentFavCat = newValue
+                // 换收藏夹时退出多选，否则选中项会跨收藏夹残留
+                isCloudSelecting = false
+                cloudSelection.removeAll()
             }
         } else {
             NavigationStack {
@@ -300,23 +366,6 @@ struct FavoritesView: View {
             }
         } label: {
             Image(systemName: isSelectMode ? "checkmark.circle.fill" : "ellipsis.circle")
-        }
-        .sheet(isPresented: $showMoveSheet) {
-            FavoriteSlotPicker(
-                onSelect: { slot in
-                    showMoveSheet = false
-                    guard slot >= 0 else { return }
-                    batchMoveToCloud(slot: slot)
-                },
-                onCancel: { showMoveSheet = false },
-                showLocalOption: false
-            )
-            .presentationDetents([.medium])
-        }
-        .confirmationDialog("确认删除 \(selectedGids.count) 个收藏？", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
-            Button("删除", role: .destructive) {
-                batchDeleteSelected()
-            }
         }
     }
 
