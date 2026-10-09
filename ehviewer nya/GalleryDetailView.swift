@@ -33,8 +33,11 @@ struct GalleryDetailView: View {
 
     /// 跨列导航动作 — 分栏布局里把标签/上传者列表推入列表列（注入时才存在）。
     @Environment(\.galleryNavigationAction) private var navAction
-    @Environment(\.dismiss) private var dismiss
+    // 只在 iOS 用到（自定义返回按钮）。macOS 千万别声明这个环境值：
+    // 阅读器推入详情列所在的 NavigationStack 后，栈根的 dismiss action 会在每次
+    // 布局里被重建，本视图据此无限重绘（实测 ~200 次/秒，主线程跑满、阅读器卡死）。
     #if os(iOS)
+    @Environment(\.dismiss) private var dismiss
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     #else
     @Environment(\.ehToolbarTopInset) private var toolbarTopInset
