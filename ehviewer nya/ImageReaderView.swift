@@ -1422,16 +1422,23 @@ struct ImageReaderView: View {
     }
 
     private var topBar: some View {
-        // 两枚玻璃胶囊而非一条通栏工具栏：阅读器的主体是图，
+        // 若干枚玻璃胶囊而非一条通栏工具栏：阅读器的主体是图，
         // 通栏会在图上压出一条硬边，胶囊只占它需要的宽度。
         GlassEffectContainer {
             HStack(spacing: 10) {
                 HStack(spacing: 6) {
+                    // 顶栏按钮必须显式给出命中区 + .plain：
+                    // 胶囊用的是 interactive glassEffect，它的触摸层会盖过按钮，
+                    // 默认样式的按钮只剩图标那一点命中区，于是点上去没反应。
+                    // 底栏 modeBlock / 浮起导航条都带 .buttonStyle(.plain) + contentShape。
                     Button(action: { dismiss() }) {
                         Image(systemName: "chevron.left")
                             .font(.system(size: 15, weight: .semibold))
                             .foregroundStyle(EhReaderChrome.label)
+                            .frame(width: 30, height: 30)
+                            .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
 
                     if let title = readerTitle {
                         Text(title)
@@ -1451,30 +1458,38 @@ struct ImageReaderView: View {
 
                 Spacer(minLength: 8)
 
-                // 双页与阅读方向只在底栏出现一次。
-                // 此前顶栏和底栏各有一份，同一个开关在屏幕上有两个位置、
-                // 两种样式，按哪个都行——这不是「快捷方式」，是重复。
-                HStack(spacing: 14) {
-                    Button { showPageGrid = true } label: {
-                        Image(systemName: "square.grid.2x2")
-                            .foregroundStyle(EhReaderChrome.label)
-                    }
-
-                    // 齿轮。这里原来画的是 sun.max，点开却是整个阅读设置面板——
-                    // 图标承诺的是亮度，打开的是设置。
-                    Button { showSettings = true } label: {
-                        Image(systemName: "gearshape")
-                            .foregroundStyle(EhReaderChrome.label)
-                    }
+                // 跳转（目录）与设置各占一枚胶囊 —— 分成两个按键：
+                // 语义上本就是两件事；而且同处一枚交互玻璃的相邻按钮会被并入
+                // 同一个交互面，只有第一个能收到点击，拆开各自成键最稳。
+                Button { showPageGrid = true } label: {
+                    Image(systemName: "square.grid.2x2")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(EhReaderChrome.label)
+                        .frame(width: 44, height: 38)
+                        .contentShape(Rectangle())
+                        .ehLiquidGlass(
+                            in: Capsule(),
+                            tint: EhReaderChrome.glassTint,
+                            interactive: true
+                        )
                 }
-                .font(.system(size: 15, weight: .medium))
-                .padding(.horizontal, 14)
-                .frame(height: 38)
-                .ehLiquidGlass(
-                    in: Capsule(),
-                    tint: EhReaderChrome.glassTint,
-                    interactive: true
-                )
+                .buttonStyle(.plain)
+
+                // 齿轮。这里原来画的是 sun.max，点开却是整个阅读设置面板——
+                // 图标承诺的是亮度，打开的是设置。
+                Button { showSettings = true } label: {
+                    Image(systemName: "gearshape")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(EhReaderChrome.label)
+                        .frame(width: 44, height: 38)
+                        .contentShape(Rectangle())
+                        .ehLiquidGlass(
+                            in: Capsule(),
+                            tint: EhReaderChrome.glassTint,
+                            interactive: true
+                        )
+                }
+                .buttonStyle(.plain)
             }
             .padding(.horizontal, EhSpacing.page)
             .padding(.top, 50)
