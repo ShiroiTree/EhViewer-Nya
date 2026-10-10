@@ -54,6 +54,14 @@ struct RootView: View {
 
     // MARK: - 同步计算初始页面 (消除白屏)
     init() {
+        // 占位符模式：跳过全部前置页面（钥匙串恢复 / 18+ 警告 / 安全认证 /
+        // 站点选择 / 登录），直接进主界面。顺带避免在公开场合读到真实凭据。
+        if PlaceholderMode.isEnabled {
+            _flowStep = State(initialValue: .main)
+            _appState = State(initialValue: AppState())
+            return
+        }
+
         let settings = AppSettings.shared
         let step: OnboardingStep
         if settings.showWarning {

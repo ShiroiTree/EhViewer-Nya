@@ -39,6 +39,13 @@ public enum EhCredentialStore {
     private static let service = "com.ehviewer.credentials"
     private static let account = "eh-session"
 
+    /// 彻底禁用钥匙串访问（不探测、不读、不写）。
+    ///
+    /// 占位符/演示版用它来保证公开场合下绝不接触真实凭据；另外占位版 bundle id
+    /// 与正式版不同，访问正式版写入的钥匙串项还会弹出系统授权框——这一开关把它一并挡掉。
+    /// 由 App 在启动最早期设置一次。
+    public nonisolated(unsafe) static var isSuppressed = false
+
     /// 钥匙串这台机器上能不能用。
     ///
     /// 未签名 / 缺 application-identifier 的构建（本地 CODE_SIGNING_ALLOWED=NO
@@ -47,6 +54,8 @@ public enum EhCredentialStore {
     /// 而认证 Cookie 已经改成了不落盘的会话 Cookie —— 两件事叠在一起
     /// 就是每次启动都掉登录。
     public static var isAvailable: Bool {
+        // 被禁用时直接当「不可用」，连锁喉探测这一下都不做
+        if isSuppressed { return false }
         if let cached = availabilityCache { return cached }
         let probeQuery: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,

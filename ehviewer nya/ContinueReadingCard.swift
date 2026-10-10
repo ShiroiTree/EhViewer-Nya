@@ -100,7 +100,9 @@ struct ContinueReadingCard: View {
                     Text("继续阅读").ehSectionHeader()
                         .foregroundStyle(EhColor.accent)
 
-                    Text(record.titleJpn ?? record.title)
+                    Text(PlaceholderMode.isEnabled
+                         ? PlaceholderMode.title(String(record.gid))
+                         : (record.titleJpn ?? record.title))
                         .font(EhFont.body)
                         .lineLimit(1)
                         .foregroundStyle(EhColor.label)

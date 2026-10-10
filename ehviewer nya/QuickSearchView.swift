@@ -268,12 +268,16 @@ struct QuickSearchDrawerContent: View {
                             onDismiss()
                         } label: {
                             VStack(alignment: .leading, spacing: 4) {
-                                Text(search.name ?? QuickSearchView.translateKeyword(search.keyword) ?? "未命名")
+                                Text(PlaceholderMode.isEnabled
+                                     ? PlaceholderMode.title(search.keyword ?? search.name ?? "saved")
+                                     : (search.name ?? QuickSearchView.translateKeyword(search.keyword) ?? "未命名"))
                                     .font(.body)
                                     .foregroundStyle(.primary)
                                 if let keyword = search.keyword, !keyword.isEmpty,
                                    search.name != nil {
-                                    Text(QuickSearchView.translateKeyword(keyword) ?? keyword)
+                                    Text(PlaceholderMode.isEnabled
+                                         ? PlaceholderMode.line(keyword)
+                                         : (QuickSearchView.translateKeyword(keyword) ?? keyword))
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
                                         .lineLimit(1)

@@ -111,7 +111,9 @@ struct EhGalleryRow: View {
     @ViewBuilder
     private func tagChip(_ tag: String) -> some View {
         let hit = isHighlighted(tag)
-        let label = Text(Self.tagLabel(tag))
+        // 占位符模式：只替换 chip 上显示的文字，`tag` 本身保持真实，
+        // 点击仍然按真实标签搜索。seed 用真实标签，输出是假词，不外泄。
+        let label = Text(PlaceholderMode.isEnabled ? PlaceholderMode.tag(tag) : Self.tagLabel(tag))
             .font(.system(size: 10, weight: hit ? .semibold : .regular))
             .foregroundStyle(hit ? EhColor.onAccentFill
                              : (onTagTap == nil ? EhColor.secondaryLabel : EhColor.accent))
@@ -317,6 +319,10 @@ extension EhGalleryRow {
         highlightedTags: Set<String> = []
     ) {
         let settings = AppSettings.shared
+        // 占位符模式：标题与上传者替换为假文本；标签条在 tagChip 里只替换显示、
+        // 保留真实值供点击搜索。页数/评分/时间等非敏感数字保持真实。
+        let ph = PlaceholderMode.isEnabled
+        let seed = String(gallery.gid)
         var meta = extraMeta
         if settings.showGalleryPages, gallery.pages > 0, !hidesPageCount {
             meta.append(.init("\(gallery.pages)P"))
@@ -330,10 +336,12 @@ extension EhGalleryRow {
 
         self.init(
             cover: gallery.thumb,
-            title: gallery.suitableTitle(preferJpn: settings.showJpnTitle),
+            title: ph ? PlaceholderMode.title(seed) : gallery.suitableTitle(preferJpn: settings.showJpnTitle),
             category: gallery.category,
             language: gallery.simpleLanguage,
-            subtitle: subtitleOverride ?? gallery.uploader,
+            subtitle: ph
+                ? (subtitleOverride ?? PlaceholderMode.uploader(seed))
+                : (subtitleOverride ?? gallery.uploader),
             meta: meta,
             tags: gallery.simpleTags ?? [],
             isDownloaded: GalleryStatusCache.shared.isDownloaded(gid: gallery.gid),

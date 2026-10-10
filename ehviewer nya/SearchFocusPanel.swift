@@ -150,7 +150,7 @@ struct SearchFocusPanel: View {
         } label: {
             HStack(spacing: EhSpacing.row) {
                 if let ns = namespace(of: item.english) {
-                    Text(ns)
+                    Text(PlaceholderMode.isEnabled ? PlaceholderMode.namespaceLabel(item.english) : ns)
                         .font(EhFont.footnote.weight(.semibold))
                         .foregroundStyle(EhColor.accent)
                         .frame(width: 44, alignment: .trailing)
@@ -159,10 +159,10 @@ struct SearchFocusPanel: View {
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(item.chinese)
+                    Text(PlaceholderMode.isEnabled ? PlaceholderMode.tag(item.english) : item.chinese)
                         .font(EhFont.body)
                         .foregroundStyle(EhColor.label)
-                    Text(item.english)
+                    Text(PlaceholderMode.isEnabled ? PlaceholderMode.line(item.english) : item.english)
                         .font(.system(size: 11, design: .monospaced))
                         .foregroundStyle(EhColor.secondaryLabel)
                 }

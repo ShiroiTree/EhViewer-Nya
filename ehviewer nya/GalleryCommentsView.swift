@@ -103,7 +103,7 @@ struct GalleryCommentsView: View {
         VStack(alignment: .leading, spacing: 8) {
             // 头部：用户名、上传者徽标、时间、分数
             HStack(spacing: 8) {
-                Text(comment.user)
+                Text(PlaceholderMode.isEnabled ? PlaceholderMode.uploader(comment.user) : comment.user)
                     .font(EhFont.body.weight(.semibold))
                     .foregroundStyle(EhColor.label)
 
@@ -133,7 +133,9 @@ struct GalleryCommentsView: View {
             }
 
             // 评论内容 (HTML 转纯文本，完整显示)
-            Text(comment.comment.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression))
+            Text(PlaceholderMode.isEnabled
+                 ? PlaceholderMode.comment("\(comment.user):\(comment.id)")
+                 : comment.comment.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression))
                 .font(EhFont.body)
                 .foregroundStyle(EhColor.label)
             
@@ -266,6 +268,8 @@ class GalleryCommentsViewModel {
     }
     
     func loadAllComments(gid: Int64, token: String) async {
+        // 占位符模式：初始评论已是合成的完整列表，不再联网
+        if PlaceholderMode.isEnabled { return }
         guard !isLoading else { return }
         isLoading = true
         

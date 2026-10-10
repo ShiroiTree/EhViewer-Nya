@@ -730,6 +730,22 @@ class ReaderViewModel {
     }
 
     private func performImageDownload(_ index: Int) async {
+        // 占位符模式：合成占位页图，不读磁盘缓存、不发网络请求。
+        // 放在最前，确保既不下载真实图片，也不显示此前缓存的真实图。
+        if PlaceholderMode.isEnabled {
+            let key = cacheKey(for: index)
+            let img = PlaceholderImage.page(
+                seed: "\(gid):\(index)", pageNumber: index + 1, total: totalPages
+            )
+            Self.imageCache.setObject(img, forKey: key, cost: Self.decodedCost(of: img))
+            await MainActor.run {
+                self.cachedImages[index] = img
+                self.downloadProgress.removeValue(forKey: index)
+                self.errorPages.remove(index)
+            }
+            return
+        }
+
         // 已缓存 → 直接提升到 Observable 层 (使用 gid:page 复合 key)
         let key = cacheKey(for: index)
         if let cached = Self.imageCache.object(forKey: key) {
@@ -1036,6 +1052,21 @@ class ReaderViewModel {
 
     func loadPage(_ index: Int) async {
         guard index >= 0, index < totalPages else { return }
+
+        // 占位符模式：不发网络、不读本地/缓存，直接给一个合成 URL，
+        // 让后续的 downloadImageData → performImageDownload 产出占位页图。
+        // 这一步很关键：阅读器是按 imageURLs[index] 是否有值来决定「这一页是否可用」的，
+        // 断网时真实 URL 拿不到，占位图也就永远不会生成。
+        if PlaceholderMode.isEnabled {
+            if imageURLs[index] == nil {
+                await MainActor.run {
+                    self.imageURLs[index] = "placeholder://\(self.gid)/\(index + 1)"
+                    self.errorPages.remove(index)
+                }
+            }
+            return
+        }
+
         guard imageURLs[index] == nil else { return }
         guard !loadingPages.contains(index) else { return }
 

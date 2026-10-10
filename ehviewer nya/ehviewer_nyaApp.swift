@@ -28,6 +28,12 @@ struct EhViewerApp: App {
     #endif
 
     init() {
+        // ⚠️ 第一件事：占位符模式下彻底关闭钥匙串访问。
+        // 必须早于任何可能触碰 EhCookieManager/EhCredentialStore 的代码——
+        // 单例初始化时的凭据恢复会探测钥匙串（SecItemAdd/CopyMatching），
+        // 而占位版 bundle id 与正式版不同，读正式版写入的项还会弹系统授权框。
+        EhCredentialStore.isSuppressed = PlaceholderMode.isEnabled
+
         #if DEBUG
         // 必须早于下面所有读取本地状态的动作：清了钥匙串再 ensureCredentialsRestored，
         // 顺序反了就是先把凭据恢复出来、再被清掉
@@ -41,7 +47,11 @@ struct EhViewerApp: App {
         // GalleryActionService.siteBaseURL 选站点）是直接读 HTTPCookieStorage 的，
         // 只要它们跑在恢复之前，看到的就是「未登录」。
         // 放在 App.init 的最前面，才能保证所有这些读取都在它之后。
-        EhCookieManager.shared.ensureCredentialsRestored()
+        //
+        // 占位符模式：不碰钥匙串、不恢复真实凭据（公开场合下也不该读到）。
+        if !PlaceholderMode.isEnabled {
+            EhCookieManager.shared.ensureCredentialsRestored()
+        }
         // 配置全局 URLCache (对标 Android Conaco 320MB 磁盘缓存)
         // AsyncImage 和所有使用 URLSession.shared 的代码都会受益
         URLCache.shared = URLCache(
@@ -72,7 +82,10 @@ struct EhViewerApp: App {
         Task { @MainActor in
             // 把本地设置同步成服务端的 uconfig Cookie
             // (图片分辨率 / 排除语言 / 排除命名空间 / 默认分类 / 预览尺寸都靠它生效)
-            EhConfigSync.apply()
+            // 占位符模式：不向服务端同步、不使用真实凭据。
+            if !PlaceholderMode.isEnabled {
+                EhConfigSync.apply()
+            }
 
             _ = await DownloadNotificationService.shared.requestAuthorization()
 

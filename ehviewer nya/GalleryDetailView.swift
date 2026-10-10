@@ -118,7 +118,7 @@ struct GalleryDetailView: View {
         .task(id: gallery.gid) {
             // 画廊 ID 变更时重置 VM 状态并重新加载 (修复 SwiftUI 视图复用 bug)
             vm.reset()
-            await vm.loadDetail(gid: gallery.gid, token: gallery.token)
+            await vm.loadDetail(gid: gallery.gid, token: gallery.token, pages: gallery.pages)
         }
         // Fix F3-2: 每次详情页出现时重新查询下载状态 (解决导航栈返回时状态不同步)
         .onAppear {
@@ -183,7 +183,7 @@ struct GalleryDetailView: View {
     private var detailMenu: some View {
         Menu {
             Button {
-                Task { await vm.loadDetail(gid: gallery.gid, token: gallery.token) }
+                Task { await vm.loadDetail(gid: gallery.gid, token: gallery.token, pages: gallery.pages) }
             } label: {
                 Label("刷新", systemImage: "arrow.clockwise")
             }
@@ -240,7 +240,9 @@ struct GalleryDetailView: View {
                 // 所以文字不重复」——但对齐 Android 那一版之后 EhCoverThumbnail
                 // 画的已经是分类角标（右上角那块 Western），文字于是成了
                 // 同一个词并排出现两遍。
-                Text(gallery.suitableTitle(preferJpn: AppSettings.shared.showJpnTitle))
+                Text(PlaceholderMode.isEnabled
+                     ? PlaceholderMode.title(String(gallery.gid))
+                     : gallery.suitableTitle(preferJpn: AppSettings.shared.showJpnTitle))
                     .font(EhFont.title)
                     .foregroundStyle(EhColor.label)
                     .lineLimit(4)
@@ -545,7 +547,9 @@ struct GalleryDetailView: View {
                     // 注意：Android使用 "n:" 前缀表示rows命名空间的翻译
                     let nsKey = "rows:\(group.groupName)"
                     let nsTranslation = showTranslations ? tagDb.getTranslation(nsKey) : nil
-                    Text(nsTranslation ?? group.groupName)
+                    Text(PlaceholderMode.isEnabled
+                         ? PlaceholderMode.namespaceLabel(group.groupName)
+                         : (nsTranslation ?? group.groupName))
                         .font(.caption.bold())
                         .foregroundStyle(.secondary)
                         .frame(width: 70, alignment: .trailing)
@@ -555,8 +559,11 @@ struct GalleryDetailView: View {
                             // 翻译 tag (对齐 Android: ehTags.getTranslation(namespace:tag))
                             let fullTag = "\(group.groupName):\(tag)"
                             let tagTranslation = showTranslations ? tagDb.getTranslation(fullTag) : nil
+                            // 提前算好显示用 label，占位模式下换成假标签（fullTag 仍是真实值，
+                            // 点击/搜索行为不受影响）
+                            let label = PlaceholderMode.isEnabled ? PlaceholderMode.tag(fullTag) : (tagTranslation ?? tag)
                             // 对齐 Android: onTagClick → 推入新画廊列表到左侧导航栈
-                            tagButton(label: tagTranslation ?? tag, fullTag: fullTag)
+                            tagButton(label: label, fullTag: fullTag)
                         }
                     }
                 }
@@ -683,7 +690,7 @@ struct GalleryDetailView: View {
         HStack(spacing: 4) {
             Image(systemName: "person.crop.circle")
                 .font(.system(size: 11))
-            Text(text)
+            Text(PlaceholderMode.isEnabled ? PlaceholderMode.uploader(text) : text)
                 .font(EhFont.meta)
                 .lineLimit(1)
         }
@@ -936,7 +943,7 @@ struct GalleryDetailView: View {
         EhStateView(
             kind: .error(title: "加载失败", message: message),
             primaryAction: ("重试", {
-                Task { await vm.loadDetail(gid: gallery.gid, token: gallery.token) }
+                Task { await vm.loadDetail(gid: gallery.gid, token: gallery.token, pages: gallery.pages) }
             })
         )
         .frame(maxWidth: .infinity)
@@ -1047,7 +1054,22 @@ class GalleryDetailViewModel {
         processedComments = []
     }
 
-    func loadDetail(gid: Int64, token: String) async {
+    func loadDetail(gid: Int64, token: String, pages: Int = 0) async {
+        // 占位符模式：不发网络、不查缓存，直接合成一整套详情
+        // （标签组 / 预览集 / 评论），让详情页与预览页离线也饱满。
+        if PlaceholderMode.isEnabled {
+            let synthetic = PlaceholderMode.syntheticDetail(gid: gid, token: token, pages: pages)
+            self.detail = synthetic
+            self.isFavorited = false
+            self.displayRating = synthetic.info.rating
+            self.downloadState = DownloadManager.stateInvalid
+            self.isLoading = false
+            self.errorMessage = nil
+            preprocessComments(synthetic.comments.comments)
+            checkReadingProgress(gid: gid)
+            return
+        }
+
         guard !isLoading else { return }
 
         // 1) 先查内存缓存 (对标 Android: EhApplication.getGalleryDetailCache().get(gid))
@@ -1274,6 +1296,8 @@ class GalleryDetailViewModel {
 
     /// 加载全部评论 (带 ?hc=1 参数获取所有评论)
     func loadAllComments(gid: Int64, token: String) async {
+        // 占位符模式：合成详情里已经带全评论（hasMore=false），不再联网
+        if PlaceholderMode.isEnabled { return }
         guard !isLoadingComments else { return }
 
         isLoadingComments = true

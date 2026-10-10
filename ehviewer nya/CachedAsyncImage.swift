@@ -168,6 +168,13 @@ struct CachedAsyncImage<Content: View, Placeholder: View>: View {
     }
 
     private func load() async {
+        // 占位符模式：直接合成占位图，既不读缓存（避免显示此前缓存的真实图）
+        // 也不发网络请求。放在最前；即使 url 为空也照样给占位图，
+        // 这样无封面 URL 的条目（断网 / 本地记录缺缩略图）也有可见占位，而非一片空白。
+        if PlaceholderMode.isEnabled {
+            self.image = PlaceholderImage.thumbnail(seed: url?.absoluteString ?? "placeholder")
+            return
+        }
         guard let url else { return }
         // 如果已经有图片或正在加载，跳过
         guard image == nil, !isLoading else { return }

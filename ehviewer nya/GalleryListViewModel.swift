@@ -756,6 +756,27 @@ class GalleryListViewModel {
     }
 
     private func fetchPage(mode: GalleryListView.ListMode, page: Int) async {
+        // 占位符模式：不发网络请求，用合成的画廊行填充**网络列表**
+        // （首页/热门/排行/搜索/标签/订阅），让断网时也能完整浏览、截图、跑 UI 测试。
+        // 收藏列表走本地数据，不在此替换。
+        let isFavorites: Bool = {
+            if case .favorites = mode { return true }
+            return false
+        }()
+        if PlaceholderMode.isEnabled, !isFavorites {
+            galleries = PlaceholderMode.syntheticGalleries(
+                seedBase: String(describing: mode), startIndex: page * 24
+            )
+            prevHref = nil
+            nextHref = nil
+            totalPages = 1
+            hasMore = false
+            currentPage = page
+            isLoading = false
+            errorMessage = nil
+            return
+        }
+
         print("[EhVM] fetchPage: mode=\(mode) page=\(page)")
         do {
             let site = AppSettings.shared.gallerySite

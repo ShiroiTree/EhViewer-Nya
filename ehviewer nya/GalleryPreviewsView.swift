@@ -231,6 +231,9 @@ class GalleryPreviewsViewModel {
         let nextPage = currentPage + 1
         guard nextPage < totalPages else { return }
         guard !loadedPages.contains(nextPage) else { return }
+
+        // 占位符模式：合成详情里的预览集已按画廊页数一次性给全，离线不再翻页
+        if PlaceholderMode.isEnabled { return }
         
         isLoading = true
         await MainActor.run { isLoadingMore = true }
