@@ -251,7 +251,7 @@ struct RootView: View {
             Button("打开") {
                 if let gallery = clipboardGallery {
                     NotificationCenter.default.post(
-                        name: .openGalleryFromClipboard,
+                        name: .openGalleryDetail,
                         object: nil,
                         userInfo: ["gid": gallery.gid, "token": gallery.token]
                     )

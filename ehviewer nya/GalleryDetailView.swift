@@ -30,6 +30,15 @@ struct GalleryDetailView: View {
     @State private var showResourceSheet = false
     @State private var showTorrents = false
     @State private var showCellularWarning = false
+    /// 预览评论里点开的站内画廊（iOS 推入当前栈；macOS 交通知换详情列）
+    @State private var commentLinkedGallery: GalleryInfo?
+
+    /// 展示与操作使用的画廊元数据。
+    ///
+    /// 从评论链接、剪贴板等只带 gid + token 的入口进来时，入参没有标题、
+    /// 封面和分类，直接用它就是 Untitled / 空封面；详情返回后必须换成服务端
+    /// 解析出来的 `detail.info`。
+    private var info: GalleryInfo { vm.detail?.info ?? gallery }
 
     /// 跨列导航动作 — 分栏布局里把标签/上传者列表推入列表列（注入时才存在）。
     @Environment(\.galleryNavigationAction) private var navAction
@@ -115,6 +124,11 @@ struct GalleryDetailView: View {
             )
             .id(item.id) // 保证每次 launch 创建新视图
         }
+        #if os(iOS)
+        .navigationDestination(item: $commentLinkedGallery) { linked in
+            GalleryDetailView(gallery: linked).id(linked.gid)
+        }
+        #endif
         .task(id: gallery.gid) {
             // 画廊 ID 变更时重置 VM 状态并重新加载 (修复 SwiftUI 视图复用 bug)
             vm.reset()
@@ -129,7 +143,7 @@ struct GalleryDetailView: View {
         }
         #if os(macOS)
         .onReceive(NotificationCenter.default.publisher(for: .downloadGallery)) { _ in
-            Task { await vm.startDownload(gallery: gallery) }
+            Task { await vm.startDownload(gallery: info) }
         }
         .onReceive(NotificationCenter.default.publisher(for: .favoriteGallery)) { _ in
             if vm.isFavorited {
@@ -146,7 +160,7 @@ struct GalleryDetailView: View {
         #endif
         .sheet(isPresented: $showRatingSheet) {
             RatingSheet(
-                currentRating: vm.displayRating ?? gallery.rating,
+                currentRating: vm.displayRating ?? info.rating,
                 onRate: { rating in
                     Task { await vm.rateGallery(gid: gallery.gid, token: gallery.token, rating: rating) }
                 }
@@ -160,11 +174,11 @@ struct GalleryDetailView: View {
         ) {
             Button("仍然下载") {
                 Haptics.impact()
-                Task { await vm.startDownload(gallery: gallery) }
+                Task { await vm.startDownload(gallery: info) }
             }
             Button("取消", role: .cancel) {}
         } message: {
-            Text("这本共 \(vm.detail?.info.pages ?? gallery.pages) 页，下载会消耗蜂窝数据。可以在设置里关掉这个提醒。")
+            Text("这本共 \(info.pages) 页，下载会消耗蜂窝数据。可以在设置里关掉这个提醒。")
         }
         .sheet(isPresented: $showResourceSheet) { resourceSheet }
         .sheet(isPresented: $showArchive) {
@@ -227,9 +241,9 @@ struct GalleryDetailView: View {
         let posted = vm.detail?.info.posted ?? gallery.posted
         return HStack(alignment: .top, spacing: 14) {
             EhCoverThumbnail(
-                url: gallery.thumb,
+                url: info.thumb,
                 size: coverSize,
-                category: gallery.category,
+                category: info.category,
                 cornerRadius: 8
             )
 
@@ -242,7 +256,7 @@ struct GalleryDetailView: View {
                 // 同一个词并排出现两遍。
                 Text(PlaceholderMode.isEnabled
                      ? PlaceholderMode.title(String(gallery.gid))
-                     : gallery.suitableTitle(preferJpn: AppSettings.shared.showJpnTitle))
+                     : info.suitableTitle(preferJpn: AppSettings.shared.showJpnTitle))
                     .font(EhFont.title)
                     .foregroundStyle(EhColor.label)
                     .lineLimit(4)
@@ -268,7 +282,7 @@ struct GalleryDetailView: View {
                     if vm.canRate { showRatingSheet = true }
                 } label: {
                     HStack(alignment: .firstTextBaseline, spacing: 5) {
-                        Text(String(format: "%.2f", vm.displayRating ?? gallery.rating))
+                        Text(String(format: "%.2f", vm.displayRating ?? info.rating))
                             .font(EhFont.rating)
                             .foregroundStyle(EhColor.accent)
                         Text(ratingSuffix)
@@ -280,7 +294,7 @@ struct GalleryDetailView: View {
                 .disabled(!vm.canRate)
 
                 HStack(spacing: EhSpacing.row) {
-                    Text("\(gallery.pages) 页")
+                    Text("\(info.pages) 页")
                     if let size = vm.size { Text(size) }
                     if let lang = vm.language { Text(lang) }
                 }
@@ -449,7 +463,7 @@ struct GalleryDetailView: View {
                 } else {
                     let defaultSlot = AppSettings.shared.defaultFavSlot
                     if defaultSlot == -1 {
-                        vm.addLocalFavorite(gallery: gallery)
+                        vm.addLocalFavorite(gallery: info)
                     } else if defaultSlot >= 0 && defaultSlot <= 9 {
                         Task { await vm.addFavorite(gid: gallery.gid, token: gallery.token, slot: defaultSlot) }
                     } else {
@@ -475,7 +489,7 @@ struct GalleryDetailView: View {
                     showCellularWarning = true
                 } else {
                     Haptics.impact()
-                    Task { await vm.startDownload(gallery: gallery) }
+                    Task { await vm.startDownload(gallery: info) }
                 }
             }
 
@@ -496,7 +510,7 @@ struct GalleryDetailView: View {
                     showFavoritePicker = false
                     if slot == -1 {
                         // 本地收藏 (对齐 Android FAV_CAT_LOCAL)
-                        vm.addLocalFavorite(gallery: gallery)
+                        vm.addLocalFavorite(gallery: info)
                     } else {
                         Task { await vm.addFavorite(gid: gallery.gid, token: gallery.token, slot: slot) }
                     }
@@ -921,11 +935,13 @@ struct GalleryDetailView: View {
                                     .foregroundStyle(comment.score > 0 ? .green : .red)
                             }
                         }
-                        // Perf P0-4: 使用预处理的纯文本，避免 body 内正则计算
-                        Text(comment.strippedBody)
-                            .font(.subheadline)
-                            .foregroundStyle(.primary)
-                            .lineLimit(5) // Android: setMaxLines(5)
+                        CommentBodyView(
+                            html: comment.bodyHTML,
+                            font: .subheadline,
+                            lineLimit: 5 // Android: setMaxLines(5)
+                        ) { gallery in
+                            openLinkedGalleryFromComment(gallery)
+                        }
                     }
                     .padding(.horizontal)
                     .padding(.vertical, 4)
@@ -933,6 +949,19 @@ struct GalleryDetailView: View {
             }
         }
         .padding(.bottom, 16)
+    }
+
+    /// 评论内链接的站内跳转与评论页保持一致：macOS 换掉详情列，iOS 压栈。
+    private func openLinkedGalleryFromComment(_ gallery: GalleryInfo) {
+        #if os(macOS)
+        NotificationCenter.default.post(
+            name: .openGalleryDetail,
+            object: nil,
+            userInfo: ["gid": gallery.gid, "token": gallery.token]
+        )
+        #else
+        commentLinkedGallery = gallery
+        #endif
     }
 
     // MARK: - Error
@@ -1000,21 +1029,7 @@ class GalleryDetailViewModel {
         let user: String
         let time: Date
         let score: Int
-        let strippedBody: String  // HTML 已剥离的纯文本
-    }
-
-    /// 预编译正则 (避免每次调用都重新编译)
-    private static let htmlTagRegex: NSRegularExpression? = {
-        try? NSRegularExpression(pattern: "<[^>]+>", options: [])
-    }()
-
-    /// 从 HTML 中剥离标签 — 使用预编译正则
-    private static func stripHTML(_ html: String) -> String {
-        guard let regex = htmlTagRegex else {
-            return html.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
-        }
-        let range = NSRange(html.startIndex..., in: html)
-        return regex.stringByReplacingMatches(in: html, options: [], range: range, withTemplate: "")
+        let bodyHTML: String  // 原始 HTML，交给 CommentBodyView 识别链接
     }
 
     // 从 GalleryDetail 导出的便捷属性
@@ -1172,7 +1187,7 @@ class GalleryDetailViewModel {
                 user: comment.user,
                 time: comment.time,
                 score: comment.score,
-                strippedBody: Self.stripHTML(comment.comment)
+                bodyHTML: comment.comment
             )
         }
     }

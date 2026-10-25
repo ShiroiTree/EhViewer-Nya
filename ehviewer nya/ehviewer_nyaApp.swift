@@ -235,7 +235,8 @@ extension Notification.Name {
     static let nextPage = Notification.Name("nextPage")
     static let exitReader = Notification.Name("exitReader")
     static let toggleFullscreen = Notification.Name("toggleFullscreen")
-    static let openGalleryFromClipboard = Notification.Name("openGalleryFromClipboard")
+    /// 打开指定画廊详情 (userInfo: gid, token)。剪贴板检测与评论内链接共用。
+    static let openGalleryDetail = Notification.Name("openGalleryDetail")
     /// 标签搜索 (对齐 Android: onTagClick → mUrlBuilder.set(tag) → mHelper.refresh())
     static let tagSearchRequested = Notification.Name("tagSearchRequested")
     /// 磁盘空间不足，所有下载已暂停
